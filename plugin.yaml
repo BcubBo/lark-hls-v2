@@ -1,0 +1,18 @@
+name: hermes-lark-streaming
+version: "2.0.0"
+description: "Feishu/Lark CardKit v2.0 streaming cards for Hermes Agent — real-time AI response display with typing effect, tool panels, reasoning, and more"
+author: Aowen-Nowor (original), fork v2 by Amaterasu
+kind: standalone
+provides_hooks:
+  - pre_gateway_dispatch
+  - on_feishu_normalize
+  - on_message_started
+  - on_message_completed
+  - on_message_aborted
+  - on_message_interrupted
+  - on_answer_delta
+  - on_thinking_delta
+  - on_reasoning_delta
+  - on_tool_updated
+  - on_background_review_message
+  - on_cron_deliver
