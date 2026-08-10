@@ -9,9 +9,9 @@ from collections.abc import Awaitable, Callable
 
 _logger = logging.getLogger("lark_hls_v2")
 
-CARDKIT_MS = 0.080  # CardKit 流式 API 的刷新间隔（80ms：≥官方默认 print_frequency_ms 70ms，留余量给 API 往返）
+CARDKIT_MS = 0.100  # CardKit 流式 API 的刷新间隔（100ms：≥官方默认 print_frequency_ms 70ms，留余量给 API 往返）
 LONG_GAP_MS = 1.000  # 超过此间隔 → 认为是长时间空闲
-BATCH_AFTER_GAP_MS = 0.100  # 长时间空闲后等待这个时间再 flush
+BATCH_AFTER_GAP_MS = 0.150  # 长时间空闲后等待这个时间再 flush
 
 class FlushController:
     """不包含飞书业务逻辑，只负责决定何时执行回调."""

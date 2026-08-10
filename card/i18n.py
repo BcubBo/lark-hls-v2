@@ -68,19 +68,17 @@ def _reload_custom_texts() -> None:
         from ..config import Config
         cfg = Config()
         
-        # Override panel title
+        # Always override _T from config (config takes precedence over hardcoded _T)
         panel_title = cfg.panel_title
-        if panel_title and panel_title != _defaults.PANEL_TITLE:
+        if panel_title:
             _T["agent_process"] = (panel_title, panel_title)
         
-        # Override loading text
         loading_text = cfg.loading_text
-        if loading_text and loading_text != _defaults.LOADING_TEXT:
+        if loading_text:
             _T["loading_context"] = (loading_text, loading_text)
         
-        # Override thinking text
         thinking_text = cfg.thinking_text
-        if thinking_text and thinking_text != _defaults.THINKING_TEXT:
+        if thinking_text:
             _T["thinking"] = (thinking_text, thinking_text)
             
     except Exception:
