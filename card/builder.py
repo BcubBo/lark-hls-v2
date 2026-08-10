@@ -1,6 +1,7 @@
 """CardKit v2.0 — Card assemblers: streaming, complete, and linear cards."""
 
 from __future__ import annotations
+import json
 
 from typing import TYPE_CHECKING, Any
 
@@ -44,7 +45,8 @@ def _enforce_card_element_limit(
     threshold = _FEISHU_ELEMENT_LIMIT - _ELEMENT_LIMIT_MARGIN
     total = _count_tag_objects(card)
     if total <= threshold:
-        return card
+        import logging as _dbg_log
+    return card
 
     # ── Find the unified panel element in card body ──
     body = card.get("body", {})

@@ -223,7 +223,6 @@ def _build_unified_panel_placeholder(*, expanded: bool = False) -> dict:
             "tag": "plain_text",
             "content": en_title,
             "i18n_content": _i18n(en_title, zh_title),
-            "text_color": _panel_header_color,
             "text_size": "notation",
         },
         elements=[{"tag": "markdown", "content": " "}],
@@ -268,7 +267,6 @@ def build_panel_header(*, reasoning_rounds: list, current_reasoning_text: str = 
         "tag": "plain_text",
         "content": en_full,
         "i18n_content": _i18n(en_full, zh_full),
-        "text_color": "grey",
         "text_size": "notation",
     }
 
@@ -539,7 +537,6 @@ def _build_tool_step_detail(step: dict) -> dict | None:
         "text": {
             "tag": "plain_text",
             "content": detail,
-            "text_color": "grey",
             "text_size": "notation",
         },
     }
@@ -635,7 +632,6 @@ def _build_error_panel(error_message: str, *, is_aborted: bool = False, expanded
             "tag": "plain_text",
             "content": en_label,
             "i18n_content": _i18n(en_label, zh_label),
-            "text_color": "red" if not is_aborted else "orange",
             "text_size": "notation",
         },
         elements=[markdown_el],
@@ -661,7 +657,6 @@ def _build_background_review_panel(messages: list[str], *, expanded: bool = True
             "tag": "plain_text",
             "content": en_title,
             "i18n_content": _i18n(en_title, zh_title),
-            "text_color": "grey",
             "text_size": "notation",
         },
         elements=children,
