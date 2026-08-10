@@ -697,8 +697,8 @@ def _build_footer_elements(
     en_content = "\n".join(en_lines)
     zh_content = "\n".join(zh_lines)
     if is_error:
-        en_content = f"<font color='red'>{en_content}</font>"
-        zh_content = f"<font color='red'>{zh_content}</font>"
+        en_content = f'<text_tag color="red">{en_content}</text_tag>'
+        zh_content = f'<text_tag color="red">{zh_content}</text_tag>'
 
     return [
         {"tag": "hr"},
@@ -813,23 +813,29 @@ def _render_footer_field(
 ) -> tuple[str | None, str | None]:
     if name == "status":
         if is_error:
-            return _T["status_error"]
+            en, zh = _T["status_error"]
+            return f'<text_tag color="red">{en}</text_tag>', f'<text_tag color="red">{zh}</text_tag>'
         if is_aborted:
-            return _T["status_stopped"]
-        return _T["status_completed"]
+            en, zh = _T["status_stopped"]
+            return f'<text_tag color="orange">{en}</text_tag>', f'<text_tag color="orange">{zh}</text_tag>'
+        en, zh = _T["status_completed"]
+        return f'<text_tag color="green">{en}</text_tag>', f'<text_tag color="green">{zh}</text_tag>'
 
     if name == "elapsed":
         duration = data.get("duration", 0)
         if isinstance(duration, (int, float)) and duration > 0:
             val = _format_elapsed(duration * 1000)
             if show_label:
-                return _T["elapsed"][0].format(val), _T["elapsed"][1].format(val)
-            return val, val
+                en_v, zh_v = _T["elapsed"][0].format(val), _T["elapsed"][1].format(val)
+                return f'<text_tag color="green">{en_v}</text_tag>', f'<text_tag color="green">{zh_v}</text_tag>'
+            return f'<text_tag color="green">{val}</text_tag>', f'<text_tag color="green">{val}</text_tag>'
         return None, None
 
     if name == "model":
         v = data.get("model") or None
-        return v, v
+        if v:
+            return f'<text_tag color="blue">{v}</text_tag>', f'<text_tag color="blue">{v}</text_tag>'
+        return None, None
 
     if name == "tokens":
         input_t = data.get("input_tokens", 0) or 0
@@ -839,7 +845,7 @@ def _render_footer_field(
             v = f"↑ {_compact(input_t)} ↓ {_compact(output_t)}"
             if reasoning_t:
                 v += f" 💭 {_compact(reasoning_t)}"
-            return v, v
+            return f'<text_tag color="indigo">{v}</text_tag>', f'<text_tag color="indigo">{v}</text_tag>'
         return None, None
 
     if name == "context":
@@ -849,8 +855,9 @@ def _render_footer_field(
             pct = int(used / max_c * 100)
             val = f"{_compact(used)}/{_compact(max_c)} ({pct}%)"
             if show_label:
-                return _T["context"][0].format(val), _T["context"][1].format(val)
-            return val, val
+                en_v, zh_v = _T["context"][0].format(val), _T["context"][1].format(val)
+                return f'<text_tag color="orange">{en_v}</text_tag>', f'<text_tag color="orange">{zh_v}</text_tag>'
+            return f'<text_tag color="orange">{val}</text_tag>', f'<text_tag color="orange">{val}</text_tag>'
         return None, None
 
     if name == "api_calls":
@@ -858,8 +865,8 @@ def _render_footer_field(
         if v:
             en_val, zh_val = _T["api_calls"]
             if show_label:
-                return f"{en_val} {v}", f"{zh_val} {v}"
-            return str(v), str(v)
+                return f'<text_tag color="purple">{en_val} {v}</text_tag>', f'<text_tag color="purple">{zh_val} {v}</text_tag>'
+            return f'<text_tag color="purple">{v}</text_tag>', f'<text_tag color="purple">{v}</text_tag>'
         return None, None
 
     if name == "history_offset":
@@ -867,8 +874,8 @@ def _render_footer_field(
         if v:
             en_val, zh_val = _T["history_offset"]
             if show_label:
-                return f"{en_val} {v}", f"{zh_val} {v}"
-            return str(v), str(v)
+                return f'<text_tag color="grey">{en_val} {v}</text_tag>', f'<text_tag color="grey">{zh_val} {v}</text_tag>'
+            return f'<text_tag color="grey">{v}</text_tag>', f'<text_tag color="grey">{v}</text_tag>'
         return None, None
 
     if name == "compression_exhausted":
@@ -885,8 +892,9 @@ def _render_footer_field(
             hit_pct = int(cache_read / input_total * 100)
             v = f"{_compact(cache_read)}/{_compact(input_total)} ({hit_pct}%)"
             if show_label:
-                return _T["cache"][0].format(v), _T["cache"][1].format(v)
-            return v, v
+                en_v, zh_v = _T["cache"][0].format(v), _T["cache"][1].format(v)
+                return f'<text_tag color="wathet">{en_v}</text_tag>', f'<text_tag color="wathet">{zh_v}</text_tag>'
+            return f'<text_tag color="wathet">{v}</text_tag>', f'<text_tag color="wathet">{v}</text_tag>'
         return None, None
 
     if name == "cost":
