@@ -1,9 +1,9 @@
-"""hermes-lark-streaming v2 — Feishu/Lark CardKit v2.0 streaming cards for Hermes Agent."""
+"""lark-hls-v2 v2 — Feishu/Lark CardKit v2.0 streaming cards for Hermes Agent."""
 
 import logging
 from pathlib import Path
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 _plugin_yaml = Path(__file__).resolve().parent / "plugin.yaml"
 if _plugin_yaml.exists():
@@ -16,5 +16,7 @@ if _plugin_yaml.exists():
 else:
     __version__ = "unknown"
 
-# register 函数在 plugin/__init__.py 中，延迟导入避免测试时触发
-__all__ = ["__version__"]
+# register 函数在 plugin/__init__.py 中
+from .plugin import register  # noqa: E402
+
+__all__ = ["register", "__version__"]

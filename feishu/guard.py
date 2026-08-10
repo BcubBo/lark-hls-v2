@@ -11,7 +11,7 @@ from typing import Any
 
 from .client import MSG_NOT_FOUND
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 _TERMINAL_MESSAGE_CODES = {
     231003,  # message deleted

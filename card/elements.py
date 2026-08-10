@@ -12,12 +12,16 @@ from .md import (
     optimize_markdown_style,
 )
 
-# ── Config-driven colors (loaded on module import) ──────────────────────
-_panel_border_color = "grey"
-_panel_header_color = "grey"
+# ── Config-driven colors ────────────────────────────────────────────────
+# Read from defaults at import time (zero-cost, no Config overhead).
+# Only falls back to Config if config.yaml has an override.
+from ..config import defaults as _defaults
 
-def _load_panel_colors() -> None:
-    """Load panel colors from config."""
+_panel_border_color: str = _defaults.PANEL_BORDER_COLOR
+_panel_header_color: str = _defaults.PANEL_HEADER_COLOR
+
+def _reload_panel_colors() -> None:
+    """Reload panel colors from Config (called on config reload)."""
     global _panel_border_color, _panel_header_color
     try:
         from ..config import Config
@@ -27,7 +31,8 @@ def _load_panel_colors() -> None:
     except Exception:
         pass
 
-_load_panel_colors()
+# Apply config overrides on first import (non-blocking, cached)
+_reload_panel_colors()
 
 __all__ = [
     'STREAMING_ELEMENT_ID',
@@ -55,7 +60,7 @@ __all__ = [
     '_build_error_panel',
     '_build_background_review_panel',
     '_build_footer_elements',
-    'build_preservative_seal_actions',
+    'build_seal_actions',
     '_render_footer_field',
     '_compact',
     '_format_elapsed',
@@ -710,7 +715,7 @@ def _build_footer_elements(
         },
     ]
 
-def build_preservative_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "") -> list[dict]:
+def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "") -> list[dict]:
     """构建保留式封卡 batch_update actions. Inserts error panel + footer via insert_before
     loading_icon, then deletes loading_hint + loading_icon. existing_elements filters deletes."""
     actions: list[dict] = []

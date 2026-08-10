@@ -180,7 +180,7 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
             "element_id": "clarify_select",
             "placeholder": {
                 "tag": "plain_text",
-                "content": en_placeholder,
+                "content": zh_placeholder,
                 "i18n_content": _i18n(en_placeholder, zh_placeholder),
             },
             "options": options,
@@ -200,7 +200,7 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
         "element_id": "clarify_input",
         "placeholder": {
             "tag": "plain_text",
-            "content": en_input_ph,
+            "content": zh_input_ph,
             "i18n_content": _i18n(en_input_ph, zh_input_ph),
         },
         "max_length": 500,
@@ -261,7 +261,7 @@ def build_clarify_submitted_card(*, question: str, selected: str, clarify_id: st
             },
             "text": {
                 "tag": "lark_md",
-                "content": en_sel_label,
+                "content": zh_sel_label,
                 "i18n_content": _i18n(en_sel_label, zh_sel_label),
             },
         },
@@ -279,7 +279,7 @@ def build_clarify_submitted_card(*, question: str, selected: str, clarify_id: st
                 "tag": "button",
                 "text": {
                     "tag": "plain_text",
-                    "content": en_retry,
+                    "content": zh_retry,
                     "i18n_content": _i18n(en_retry, zh_retry),
                 },
                 "type": "primary",
@@ -337,7 +337,7 @@ def build_clarify_confirmed_card(*, question: str, selected: str) -> dict[str, A
             },
             "text": {
                 "tag": "lark_md",
-                "content": en_sel_label,
+                "content": zh_sel_label,
                 "i18n_content": _i18n(en_sel_label, zh_sel_label),
             },
         },
@@ -345,7 +345,7 @@ def build_clarify_confirmed_card(*, question: str, selected: str) -> dict[str, A
             "tag": "div",
             "text": {
                 "tag": "lark_md",
-                "content": en_confirmed,
+                "content": zh_confirmed,
                 "i18n_content": _i18n(en_confirmed, zh_confirmed),
             },
         },

@@ -1,6 +1,6 @@
-"""Type-safe config reader for hermes-lark-streaming v2.
+"""Type-safe config reader for lark-hls-v2 v2.
 
-Reads from Hermes config.yaml under the ``hermes_lark_streaming`` section.
+Reads from Hermes config.yaml under the ``lark_hls_v2`` section.
 All fallback values come from :mod:`config.defaults` — the single source of truth.
 """
 
@@ -18,7 +18,7 @@ import yaml
 
 from . import defaults
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -230,19 +230,24 @@ class Config:
 
     @property
     def show_reasoning(self) -> bool:
+        # 1. Plugin section (highest priority)
+        plugin_val = self._plugin_sec().get("show_reasoning")
+        if plugin_val is not None:
+            return _to_bool(plugin_val)
+        # 2. Display > feishu section
         display = self._reload_cached().get("display")
-        if not isinstance(display, dict):
-            return False
-        platforms = display.get("platforms")
-        if isinstance(platforms, dict):
-            feishu = platforms.get("feishu")
-            if isinstance(feishu, dict) and "show_reasoning" in feishu:
-                return _to_bool(feishu["show_reasoning"])
-        return _to_bool(display.get("show_reasoning", False))
+        if isinstance(display, dict):
+            platforms = display.get("platforms")
+            if isinstance(platforms, dict):
+                feishu = platforms.get("feishu")
+                if isinstance(feishu, dict) and "show_reasoning" in feishu:
+                    return _to_bool(feishu["show_reasoning"])
+            return _to_bool(display.get("show_reasoning", defaults.SHOW_REASONING))
+        return defaults.SHOW_REASONING
 
     @property
     def gateway_cards(self) -> bool:
-        sec = self._reload_cached().get("hermes_lark_streaming")
+        sec = self._reload_cached().get("lark_hls_v2")
         if not isinstance(sec, dict):
             return defaults.GATEWAY_CARDS
         return _to_bool(sec.get("gateway_cards", defaults.GATEWAY_CARDS), default=defaults.GATEWAY_CARDS)
@@ -273,7 +278,7 @@ class Config:
 
     def _plugin_sec(self) -> dict[str, Any]:
         raw = self._load()
-        sec = raw.get("hermes_lark_streaming")
+        sec = raw.get("lark_hls_v2")
         return sec if isinstance(sec, dict) else {}
 
     def _platform_cfg(self) -> dict[str, Any]:

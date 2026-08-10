@@ -67,7 +67,7 @@ def _clean_reasoning_prefix(text: str) -> str:
     return cleaned.strip()
 
 class TextState:
-    """— dead code. The dirty-tracking mechanism was replaced by UnifiedLinearState's"""
+    """Completed text accumulator — used for text fallback when card is unavailable."""
 
     def __init__(self) -> None:
         self.completed_text = ""

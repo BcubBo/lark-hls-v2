@@ -51,7 +51,7 @@ try:
 except ImportError:
     _TOKEN_ERROR_BASES = ()
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 def _sanitize_message(msg: str) -> str:
     """从错误消息中移除 token 和 secret."""
@@ -617,7 +617,7 @@ class FeishuClient:
     def _download_image(url: str, timeout: int = 15) -> bytes | None:
         """同步下载图片（在线程池中运行）."""
         try:
-            req = Request(url, headers={"User-Agent": "hermes-lark-streaming/1.0"})
+            req = Request(url, headers={"User-Agent": "lark-hls-v2/1.0"})
             with urlopen(req, timeout=timeout) as resp:
                 if resp.status != 200:
                     return None

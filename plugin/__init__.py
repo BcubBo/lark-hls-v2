@@ -31,9 +31,9 @@ from ..config.defaults import (
 if TYPE_CHECKING:
     from hermes_cli.plugins import PluginContext
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
-_PLUGIN_NAME = "hermes-lark-streaming"
+_PLUGIN_NAME = "lark-hls-v2"
 
 _DEFAULT_STREAMING_CONFIG: dict[str, Any] = {
     "panel_expanded": PANEL_EXPANDED,
@@ -96,9 +96,9 @@ def _ensure_streaming_config() -> None:
         raw = yaml.safe_load(text) or {}
         changed = False
 
-        if "hermes_lark_streaming" not in raw:
+        if "lark_hls_v2" not in raw:
             _backup_config()
-            raw["hermes_lark_streaming"] = dict(_DEFAULT_STREAMING_CONFIG)
+            raw["lark_hls_v2"] = dict(_DEFAULT_STREAMING_CONFIG)
             changed = True
 
         plugins = raw.get("plugins")
@@ -114,7 +114,7 @@ def _ensure_streaming_config() -> None:
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(prepped, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
     except Exception:
-        _logger.exception("Failed to ensure hermes_lark_streaming config in config.yaml")
+        _logger.exception("Failed to ensure lark_hls_v2 config in config.yaml")
 
 
 def _cleanup_config() -> None:
@@ -125,8 +125,8 @@ def _cleanup_config() -> None:
         text = config_path.read_text(encoding="utf-8")
         raw = yaml.safe_load(text) or {}
         changed = False
-        if "hermes_lark_streaming" in raw:
-            del raw["hermes_lark_streaming"]
+        if "lark_hls_v2" in raw:
+            del raw["lark_hls_v2"]
             changed = True
         plugins = raw.get("plugins")
         if isinstance(plugins, dict):
@@ -138,19 +138,19 @@ def _cleanup_config() -> None:
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(raw, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
     except Exception:
-        _logger.exception("Failed to clean up hermes_lark_streaming config")
+        _logger.exception("Failed to clean up lark_hls_v2 config")
 
 
 def register(ctx: "PluginContext") -> None:
     _ensure_streaming_config()
 
-    _logger.info("hermes-lark-streaming v%s: applying runtime patches...", __version__)
+    _logger.info("lark-hls-v2 v%s: applying runtime patches...", __version__)
     try:
         from ..interceptors import apply_patches
         apply_patches()
-        _logger.info("hermes-lark-streaming v%s: patches applied", __version__)
+        _logger.info("lark-hls-v2 v%s: patches applied", __version__)
     except Exception:
-        _logger.exception("hermes-lark-streaming v%s: failed to apply patches", __version__)
+        _logger.exception("lark-hls-v2 v%s: failed to apply patches", __version__)
 
     # Pre-warm FeishuClient
     try:
@@ -185,4 +185,4 @@ def unregister(ctx: "PluginContext") -> None:
         ctrl._sess_clear()
     except Exception:
         pass
-    _logger.info("hermes-lark-streaming: unregistered")
+    _logger.info("lark-hls-v2: unregistered")

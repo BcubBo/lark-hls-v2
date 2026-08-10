@@ -1,4 +1,4 @@
-"""hermes-lark-streaming v2 config module.
+"""lark-hls-v2 v2 config module.
 
 Usage::
 

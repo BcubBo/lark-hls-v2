@@ -22,7 +22,7 @@ from .text import TextState
 from .tooluse import ToolUseTracker
 from ..feishu import UnavailableGuard
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 __all__ = [
     "CardSession",

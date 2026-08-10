@@ -9,7 +9,7 @@ from typing import Any
 
 from ..controller import get_controller
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 def _safe_hook(
     default_return: Any = None,

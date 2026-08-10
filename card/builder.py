@@ -171,7 +171,7 @@ def build_streaming_card_v2(
             },
             "locales": _LOCALES,
             "summary": {
-                "content": _T["processing"][0],
+                "content": _T["processing"][1],
                 "i18n_content": _t("processing"),
             },
         },

@@ -332,7 +332,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                     _error_msg_child = result.get("error") or result.get("interrupt_message", "")
                     if _finish_reason_child and _finish_reason_child != "stop":
                         _logger.warning(
-                            "hermes-lark-streaming v%s: child non-stop finish_reason=%s model=%s msg=%s",
+                            "lark-hls-v2 v%s: child non-stop finish_reason=%s model=%s msg=%s",
                             __version__,
                             _finish_reason_child,
                             result.get("model", "?"),
@@ -340,7 +340,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                         )
                     if _error_msg_child:
                         _logger.warning(
-                            "hermes-lark-streaming v%s: child agent error: %s model=%s msg=%s",
+                            "lark-hls-v2 v%s: child agent error: %s model=%s msg=%s",
                             __version__,
                             _error_msg_child[:200],
                             result.get("model", "?"),
@@ -419,7 +419,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                 _error_msg = result.get("error") or result.get("interrupt_message", "")
                 if _finish_reason and _finish_reason != "stop":
                     _logger.warning(
-                        "hermes-lark-streaming v%s: non-stop finish_reason=%s model=%s msg=%s",
+                        "lark-hls-v2 v%s: non-stop finish_reason=%s model=%s msg=%s",
                         __version__,
                         _finish_reason,
                         result.get("model", "?"),
@@ -427,7 +427,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                     )
                 if _error_msg:
                     _logger.warning(
-                        "hermes-lark-streaming v%s: agent error: %s model=%s msg=%s",
+                        "lark-hls-v2 v%s: agent error: %s model=%s msg=%s",
                         __version__,
                         _error_msg[:200],
                         result.get("model", "?"),
@@ -679,7 +679,7 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
             return orig(job, content, adapters=adapters, loop=loop, **kwargs)
 
         _logger.info(
-            "hermes-lark-streaming v%s: cron delivery intercepted, redirecting to card (job=%s)",
+            "lark-hls-v2 v%s: cron delivery intercepted, redirecting to card (job=%s)",
             __version__,
             job.get("id", "?")[:12],
         )
@@ -706,7 +706,7 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
                     await ctrl._do_cron_deliver(chat_id, cleaned.strip())
 
                     _logger.info(
-                        "hermes-lark-streaming v%s: cron card delivered: chat=%s",
+                        "lark-hls-v2 v%s: cron card delivered: chat=%s",
                         __version__,
                         chat_id[:12],
                     )

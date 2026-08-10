@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 class HermesCompat:
     """Encapsulates all Hermes internal module access."""

@@ -7,7 +7,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 CARDKIT_MS = 0.080  # CardKit 流式 API 的刷新间隔（80ms：≥官方默认 print_frequency_ms 70ms，留余量给 API 往返）
 LONG_GAP_MS = 1.000  # 超过此间隔 → 认为是长时间空闲

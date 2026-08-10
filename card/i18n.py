@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..config import defaults as _defaults
+
 __all__ = [
     "_LOCALES",
     "_T",
@@ -60,29 +62,29 @@ def _t(key: str) -> dict[str, str]:
     return _i18n(*_T[key])
 
 
-def _load_custom_texts() -> None:
-    """Load custom texts from config and override defaults."""
+def _reload_custom_texts() -> None:
+    """Reload custom texts from Config (called on config reload)."""
     try:
         from ..config import Config
         cfg = Config()
         
         # Override panel title
         panel_title = cfg.panel_title
-        if panel_title and panel_title != "agent loop":
+        if panel_title and panel_title != _defaults.PANEL_TITLE:
             _T["agent_process"] = (panel_title, panel_title)
         
         # Override loading text
         loading_text = cfg.loading_text
-        if loading_text and loading_text != "正在加载上下文...":
+        if loading_text and loading_text != _defaults.LOADING_TEXT:
             _T["loading_context"] = (loading_text, loading_text)
         
         # Override thinking text
         thinking_text = cfg.thinking_text
-        if thinking_text and thinking_text != "正在思考...":
+        if thinking_text and thinking_text != _defaults.THINKING_TEXT:
             _T["thinking"] = (thinking_text, thinking_text)
             
     except Exception:
         pass
 
 
-_load_custom_texts()
+_reload_custom_texts()

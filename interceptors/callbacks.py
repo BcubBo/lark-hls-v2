@@ -25,7 +25,7 @@ def _maybe_wrap_callbacks(agent) -> None:
     eid = _get_event_message_id()
     if not eid:
         _logger.debug("HLS: skip — no event_message_id in ctx")
-        return  # Not in a hermes-lark-streaming context — skip
+        return  # Not in a lark-hls-v2 context — skip
 
     _current_stream = getattr(agent, "stream_delta_callback", None)
     _current_interim = getattr(agent, "interim_assistant_callback", None)

@@ -153,6 +153,25 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
             from ..controller import get_controller
             ctrl = get_controller()
             if ctrl and ctrl.enabled:
+                # v2 fix: if this chat already has an active streaming session,
+                # suppress the gateway card to avoid duplicate cards
+                for _sess in ctrl._sess_values_snapshot():
+                        _logger.info("gateway_send: session chat=%s state=%s card_msg_id=%s", _sess.chat_id[:12] if _sess.chat_id else "?", _sess.state, bool(_sess.card_msg_id))
+                        and _sess.state in ("streaming", "creating")
+                        and _sess.card_msg_id
+                    ):
+                        _logger.info(
+                            "gateway_send: active streaming session exists for chat=%s, "
+                            "suppressing gateway card (state=%s)",
+                            chat_id[:12] if chat_id else "?",
+                            _sess.state,
+                        )
+                        try:
+                            from gateway.platforms.base import SendResult
+                            return SendResult(success=True)
+                        except (ImportError, AttributeError):
+                            return None
+
                 # Check if gateway_cards feature is enabled
                 cfg = _get_config()
                 if not cfg.gateway_cards:
@@ -179,7 +198,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                         category=category,
                     )
                     _logger.info(
-                        "lark-hls-v2 v%s: gateway message card sent: "
+                        "hermes-lark-streaming v%s: gateway message card sent: "
                         "chat=%s category=%s content_len=%d card_id=%s",
                         __version__,
                         chat_id[:12] if chat_id else "?",
@@ -199,7 +218,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                 )
         except Exception:
             _logger.info(
-                "lark-hls-v2 v%s: gateway card delivery failed, "
+                "hermes-lark-streaming v%s: gateway card delivery failed, "
                 "falling back to plain text",
                 __version__,
                 exc_info=True,
@@ -477,7 +496,7 @@ def _wrap_feishu_adapter_send_clarify(orig_send_clarify: Callable) -> Callable:
             except Exception:
                 _logger.debug("clarify card: pre-flush failed (non-fatal)", exc_info=True)
 
-            from ..card import build_clarify_card, normalize_clarify_choices
+            from ..cardkit import build_clarify_card, normalize_clarify_choices
 
             normalized = normalize_clarify_choices(choices) if choices else None
 
@@ -642,7 +661,7 @@ async def _schedule_confirm_card(*, cid: str) -> None:
         return
 
     try:
-        from ..card import build_clarify_confirmed_card
+        from ..cardkit import build_clarify_confirmed_card
         from ..controller import get_controller
 
         ctrl = get_controller()
@@ -696,7 +715,7 @@ def _handle_clarify_card_action(
         """Build a CallBackCard showing the soft-lock submitted state."""
         if P2CardActionTriggerResponse is None or CallBackCard is None:
             return _empty_response()
-        from ..card import build_clarify_submitted_card
+        from ..cardkit import build_clarify_submitted_card
         card_data = build_clarify_submitted_card(
             question=q, selected=selected_text,
             choices=choices_list, clarify_id=cid,

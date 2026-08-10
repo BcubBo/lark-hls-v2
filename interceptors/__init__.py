@@ -12,9 +12,9 @@ from typing import Any, Callable
 from .. import __version__
 
 try:
-    from .hermes_adapter import HermesCompat
+    from .hermes_compat import HermesCompat
 except ImportError:  # pragma: no cover — fallback for pytest-only path
-    from hermes_lark_streaming.interceptors.hermes_adapter import HermesCompat  # type: ignore[no-redef]
+    from lark_hls_v2.interceptors.hermes_compat import HermesCompat  # type: ignore[no-redef]
 
 __all__ = [
     # Shared state
@@ -88,14 +88,14 @@ __all__ = [
 _thread_local_ctx = threading.local()
 _thread_local_ctx.data = None
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 def _get_config():
     from ..config import Config
     return Config()
 
 _msg_ctx: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
-    "hermes_lark_streaming_msg_ctx", default=None
+    "lark_hls_v2_msg_ctx", default=None
 )
 
 _started_msg_ids: set[str] = set()
@@ -192,7 +192,7 @@ def _apply_gateway_runner_patches() -> bool:
             GatewayRunner._handle_message = _wrap_handle_message(GatewayRunner._handle_message)
             _patched_methods.append('_handle_message')
         else:
-            _logger.warning("hermes-lark-streaming: GatewayRunner._handle_message not found, skipping patch")
+            _logger.warning("lark-hls-v2: GatewayRunner._handle_message not found, skipping patch")
 
         if hasattr(GatewayRunner, '_handle_message_with_agent'):
             GatewayRunner._handle_message_with_agent = _wrap_handle_message_with_agent(
@@ -200,13 +200,13 @@ def _apply_gateway_runner_patches() -> bool:
             )
             _patched_methods.append('_handle_message_with_agent')
         else:
-            _logger.warning("hermes-lark-streaming: GatewayRunner._handle_message_with_agent not found, skipping patch")
+            _logger.warning("lark-hls-v2: GatewayRunner._handle_message_with_agent not found, skipping patch")
 
         if hasattr(GatewayRunner, '_run_agent'):
             GatewayRunner._run_agent = _wrap_run_agent(GatewayRunner._run_agent)
             _patched_methods.append('_run_agent')
         else:
-            _logger.warning("hermes-lark-streaming: GatewayRunner._run_agent not found, skipping patch")
+            _logger.warning("lark-hls-v2: GatewayRunner._run_agent not found, skipping patch")
 
         try:
             GatewayRunner._run_background_task = _wrap_run_background_task(
@@ -214,24 +214,24 @@ def _apply_gateway_runner_patches() -> bool:
             )
             _patched_methods.append('_run_background_task')
         except AttributeError:
-            _logger.debug("hermes-lark-streaming: _run_background_task not found, background cards disabled")
+            _logger.debug("lark-hls-v2: _run_background_task not found, background cards disabled")
 
         if not _patched_methods:
             _logger.error(
-                "hermes-lark-streaming: GatewayRunner patch FAILED — "
+                "lark-hls-v2: GatewayRunner patch FAILED — "
                 "no methods found. Streaming cards will NOT work."
             )
             return False
 
         _gw_runner_patched = True
         _logger.info(
-            "hermes-lark-streaming: GatewayRunner patched methods: %s",
+            "lark-hls-v2: GatewayRunner patched methods: %s",
             ', '.join(_patched_methods),
         )
         return True
     except (ImportError, AttributeError) as e:
         _logger.error(
-            "hermes-lark-streaming: GatewayRunner patch FAILED — "
+            "lark-hls-v2: GatewayRunner patch FAILED — "
             "gateway.run found but incompatible. "
             "Streaming cards will NOT work. Error: %s", e,
         )
@@ -243,7 +243,7 @@ def apply_patches() -> None:
         return
     apply_patches._applied = True  # type: ignore[attr-defined]
 
-    _logger.info("hermes-lark-streaming v%s: apply_patches() starting", __version__)
+    _logger.info("lark-hls-v2 v%s: apply_patches() starting", __version__)
 
     compat = HermesCompat()
     # ``layout`` is kept for the doctor CLI's ``hermes_layout`` print and
@@ -258,11 +258,11 @@ def apply_patches() -> None:
         # gateway.run already loaded — patch immediately
         if _apply_gateway_runner_patches():
             gw_patched = True
-            _logger.info("hermes-lark-streaming: GatewayRunner patched ✓")
+            _logger.info("lark-hls-v2: GatewayRunner patched ✓")
     else:
         # gateway.run not yet loaded — start delayed-patch poll thread
         _logger.info(
-            "hermes-lark-streaming: gateway.run not loaded yet — "
+            "lark-hls-v2: gateway.run not loaded yet — "
             "starting delayed patch poll (2s interval, 60s timeout)",
         )
         gw_delayed = True
@@ -274,12 +274,12 @@ def apply_patches() -> None:
                 time.sleep(2.0)  # Poll every 2 seconds
                 if _apply_gateway_runner_patches():
                     _logger.info(
-                        "hermes-lark-streaming: GatewayRunner patched (delayed) ✓"
+                        "lark-hls-v2: GatewayRunner patched (delayed) ✓"
                     )
                     return
             # Timeout — gateway.run never became available
             _logger.error(
-                "hermes-lark-streaming: gateway.run NOT FOUND after 60s — "
+                "lark-hls-v2: gateway.run NOT FOUND after 60s — "
                 "this Hermes version may be too old or installed incorrectly. "
                 "Streaming cards will NOT work. "
                 "Please check: 1) Hermes is running via gateway mode, "
@@ -297,17 +297,17 @@ def apply_patches() -> None:
         try:
             _cl_mod.run_conversation = _wrap_run_conversation(_cl_run_conversation)
             _module_patch_applied = True
-            _logger.info("hermes-lark-streaming: agent.conversation_loop module patched ✓")
+            _logger.info("lark-hls-v2: agent.conversation_loop module patched ✓")
         except (AttributeError, TypeError) as e:
             _logger.warning(
-                "hermes-lark-streaming: agent.conversation_loop found but "
+                "lark-hls-v2: agent.conversation_loop found but "
                 "patch failed (%s). Falling back to direct AIAgent patch.", e,
             )
 
     if not _module_patch_applied:
         # Hermes <v0.10 OR module patch failed: use direct AIAgent patch
         _logger.info(
-            "hermes-lark-streaming: using direct AIAgent patch "
+            "lark-hls-v2: using direct AIAgent patch "
             "(Hermes %s conversation_loop module)",
             "has no" if not compat.has_conversation_loop else "has incompatible",
         )
@@ -321,18 +321,18 @@ def apply_patches() -> None:
             _cron_mod._deliver_result = _wrap_cron_deliver(_cron_mod._deliver_result)
             cron_patched = True
             _logger.info(
-                "hermes-lark-streaming: cron scheduler patched ✓ (module=%s)",
+                "lark-hls-v2: cron scheduler patched ✓ (module=%s)",
                 getattr(_cron_mod, "__name__", "?"),
             )
         except (AttributeError, TypeError) as e:
-            _logger.debug("hermes-lark-streaming: cron.scheduler patch failed (%s)", e)
+            _logger.debug("lark-hls-v2: cron.scheduler patch failed (%s)", e)
 
     feishu_patched = False
     FeishuAdapter = compat.feishu_adapter_class
     if FeishuAdapter is not None:
         feishu_patched = _apply_feishu_adapter_patches(FeishuAdapter, is_repatch=False)
     else:
-        _logger.info("hermes-lark-streaming: FeishuAdapter not available via HermesCompat, patch skipped")
+        _logger.info("lark-hls-v2: FeishuAdapter not available via HermesCompat, patch skipped")
 
     # v1.6.0: hook platform_registry.create_adapter — main-chain fix for
     # hermes v0.17.0+ bundled platform deferred loading.  The FeishuAdapter
@@ -387,54 +387,54 @@ def _apply_feishu_adapter_patches(FeishuAdapter, *, is_repatch: bool = False) ->
 
     cls_id = id(FeishuAdapter)
     if cls_id in _patched_feishu_classes:
-        if is_repatch:
-            pass
-        return True
+        if not is_repatch:
+            return True  # Already patched, skip
+        # is_repatch=True: allow re-patching (fall through)
 
     try:
         FeishuAdapter.send = _wrap_feishu_adapter_send(FeishuAdapter.send)
         try:
             FeishuAdapter.edit_message = _wrap_feishu_adapter_edit(FeishuAdapter.edit_message)
         except AttributeError:
-            _logger.debug("hermes-lark-streaming: FeishuAdapter.edit_message not found, edit interception skipped")
+            _logger.debug("lark-hls-v2: FeishuAdapter.edit_message not found, edit interception skipped")
         try:
             FeishuAdapter.add_reaction = _wrap_feishu_adapter_add_reaction(FeishuAdapter.add_reaction)
         except AttributeError:
             try:
                 FeishuAdapter._add_reaction = _wrap_feishu_adapter_add_reaction(FeishuAdapter._add_reaction)
             except AttributeError:
-                _logger.debug("hermes-lark-streaming: FeishuAdapter.add_reaction/_add_reaction not found, reaction interception skipped")
+                _logger.debug("lark-hls-v2: FeishuAdapter.add_reaction/_add_reaction not found, reaction interception skipped")
         try:
             FeishuAdapter.delete_reaction = _wrap_feishu_adapter_delete_reaction(FeishuAdapter.delete_reaction)
         except AttributeError:
             try:
                 FeishuAdapter._remove_reaction = _wrap_feishu_adapter_delete_reaction(FeishuAdapter._remove_reaction)
             except AttributeError:
-                _logger.debug("hermes-lark-streaming: FeishuAdapter.delete_reaction/_remove_reaction not found, reaction interception skipped")
+                _logger.debug("lark-hls-v2: FeishuAdapter.delete_reaction/_remove_reaction not found, reaction interception skipped")
         # NOTE(v0.15.4): send_image_file / send_image interceptors DELETED (2026-06-09).
 
         try:
             FeishuAdapter.send_clarify = _wrap_feishu_adapter_send_clarify(FeishuAdapter.send_clarify)
-            _logger.info("hermes-lark-streaming: FeishuAdapter.send_clarify patched ✓ (clarify interactive card)")
+            _logger.info("lark-hls-v2: FeishuAdapter.send_clarify patched ✓ (clarify interactive card)")
         except AttributeError:
-            _logger.debug("hermes-lark-streaming: FeishuAdapter.send_clarify not found, clarify card skipped")
+            _logger.debug("lark-hls-v2: FeishuAdapter.send_clarify not found, clarify card skipped")
         try:
             FeishuAdapter._handle_card_action_event = _wrap_handle_card_action_event(FeishuAdapter._handle_card_action_event)
-            _logger.info("hermes-lark-streaming: FeishuAdapter._handle_card_action_event patched ✓ (card action /card suppression)")
+            _logger.info("lark-hls-v2: FeishuAdapter._handle_card_action_event patched ✓ (card action /card suppression)")
         except AttributeError:
-            _logger.debug("hermes-lark-streaming: FeishuAdapter._handle_card_action_event not found, /card suppression skipped")
+            _logger.debug("lark-hls-v2: FeishuAdapter._handle_card_action_event not found, /card suppression skipped")
 
         # Record this class as patched AFTER successful patch (only on success,
         # so a failed attempt can be retried later in the deferred stage).
         _patched_feishu_classes.add(cls_id)
         _logger.info(
-            "hermes-lark-streaming: FeishuAdapter.send/edit/reaction/image/clarify patched ✓ "
+            "lark-hls-v2: FeishuAdapter.send/edit/reaction/image/clarify patched ✓ "
             "(gateway message cards enabled, class_id=%s)",
             cls_id,
         )
         return True
     except AttributeError as e:
-        _logger.info("hermes-lark-streaming: FeishuAdapter patch skipped (%s)", e)
+        _logger.info("lark-hls-v2: FeishuAdapter patch skipped (%s)", e)
         return False
 
 def _verify_feishu_patch_identity(adapter_instance: Any) -> bool:
@@ -542,7 +542,7 @@ def _apply_create_adapter_hook() -> bool:
         from gateway.platform_registry import platform_registry as _pr
     except (ImportError, AttributeError):
         _logger.info(
-            "hermes-lark-streaming: platform_registry not available yet, "
+            "lark-hls-v2: platform_registry not available yet, "
             "create_adapter hook deferred (will retry on next apply_patches)"
         )
         return False
@@ -550,7 +550,7 @@ def _apply_create_adapter_hook() -> bool:
     _current = getattr(_pr, "create_adapter", None)
     if _current is None:
         _logger.info(
-            "hermes-lark-streaming: platform_registry.create_adapter missing, "
+            "lark-hls-v2: platform_registry.create_adapter missing, "
             "create_adapter hook skipped"
         )
         return False
@@ -560,7 +560,7 @@ def _apply_create_adapter_hook() -> bool:
 
     _pr.create_adapter = _wrap_platform_registry_create_adapter(_current)
     _logger.info(
-        "hermes-lark-streaming: platform_registry.create_adapter hooked ✓ "
+        "lark-hls-v2: platform_registry.create_adapter hooked ✓ "
         "(main-chain deferred-loading fix — every FeishuAdapter instance gets "
         "its class patched at creation)"
     )
@@ -570,7 +570,7 @@ def _apply_direct_agent_patch() -> None:
     """Directly patch AIAgent.run_conversation as belt-and-suspenders."""
     AIAgent = HermesCompat().aiagent_class
     if AIAgent is None:
-        _logger.info("hermes-lark-streaming: AIAgent.run_conversation direct patch deferred (run_agent not yet loaded)")
+        _logger.info("lark-hls-v2: AIAgent.run_conversation direct patch deferred (run_agent not yet loaded)")
         return
 
     try:
@@ -578,7 +578,7 @@ def _apply_direct_agent_patch() -> None:
 
         # Guard: skip if already patched
         if getattr(_orig_method, "_hls_direct_patched", False):
-            _logger.info("hermes-lark-streaming: AIAgent.run_conversation already directly patched, skip")
+            _logger.info("lark-hls-v2: AIAgent.run_conversation already directly patched, skip")
             return
 
         # v1.3.4 fix (P1): inspect.signature 可能对 C 扩展/wrapped callable 抛异常
@@ -624,6 +624,6 @@ def _apply_direct_agent_patch() -> None:
 
         _patched_run_conversation._hls_direct_patched = True
         AIAgent.run_conversation = _patched_run_conversation
-        _logger.info("hermes-lark-streaming: AIAgent.run_conversation patched directly")
+        _logger.info("lark-hls-v2: AIAgent.run_conversation patched directly")
     except AttributeError as e:
-        _logger.info("hermes-lark-streaming: AIAgent.run_conversation direct patch deferred (run_agent not yet loaded: %s)", e)
+        _logger.info("lark-hls-v2: AIAgent.run_conversation direct patch deferred (run_agent not yet loaded: %s)", e)

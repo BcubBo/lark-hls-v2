@@ -20,10 +20,11 @@ from .card import (
     _streaming_element,
     build_streaming_card_v2,
     build_unified_panel,
-    build_preservative_seal_actions,
+    build_seal_actions,
     _count_tag_objects,
     _enforce_card_element_limit,
 )
+from .card.builder import _FEISHU_ELEMENT_LIMIT, _ELEMENT_LIMIT_MARGIN
 from .card.md import _downgrade_tables, escape_markdown_asterisks, optimize_markdown_style
 from .state.linear import UnifiedLinearState
 from .state.text import split_reasoning_text
@@ -56,7 +57,7 @@ if TYPE_CHECKING:
     from .state.session import CardSession
     from .feishu import FeishuClient
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 
 def _build_seal_summary(state: UnifiedLinearState | None) -> str:
@@ -618,7 +619,7 @@ class UnifiedControllerMixin:
         if (reasoning and self._cfg.show_reasoning and not _reasoning_already_tracked) or answer:
             self._schedule_linear_flush(session)
 
-    async def _preservative_seal(
+    async def _finalize_card(
         self,
         session: CardSession,
         *,
@@ -630,7 +631,7 @@ class UnifiedControllerMixin:
         footer_fields: list[list[str]] | None = None,
         footer_show_label: bool = False,
     ) -> bool:
-        """Preservative seal — update panel + add footer + close streaming."""
+        """Finalize card — flush dirty data, update panel, add footer, close streaming."""
         assert self._client is not None
         card_id = session.card_id
         assert card_id is not None
@@ -641,7 +642,7 @@ class UnifiedControllerMixin:
             state = session.unified_state
             if state is not None and (state.answer_dirty or state.panel_dirty or state.tool_steps_dirty):
                 _logger.warning(
-                    "preservative seal: dirty data detected at seal time "
+                    "finalize_card: dirty data detected at seal time "
                     "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s card=%s — "
                     "flushing before close",
                     state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
@@ -771,7 +772,7 @@ class UnifiedControllerMixin:
 
             # ── Step 3: Add footer + delete loading elements ──
             seal_actions.extend(
-                build_preservative_seal_actions(
+                build_seal_actions(
                     partial=partial,
                     footer_data=footer_data,
                     is_error=is_error,
@@ -800,12 +801,10 @@ class UnifiedControllerMixin:
                             simulated_elements.append(elem)
                 # Count total tag objects in simulated card body
                 total_count = _count_tag_objects(simulated_elements)
-                _FEISHU_ELEMENT_LIMIT = 200
-                _ELEMENT_LIMIT_MARGIN = 5
                 threshold = _FEISHU_ELEMENT_LIMIT - _ELEMENT_LIMIT_MARGIN
                 if total_count > threshold:
                     _logger.warning(
-                        "preservative seal: card element count %d exceeds threshold %d, "
+                        "finalize_card: card element count %d exceeds threshold %d, "
                         "trimming panel children card=%s",
                         total_count, threshold, card_id[:12],
                     )
@@ -868,7 +867,7 @@ class UnifiedControllerMixin:
                                 seal_actions[i]["params"]["partial_element"]["elements"] = children
                                 break
                     _logger.info(
-                        "preservative seal: after trimming, estimated total %d, trimmed %d items card=%s",
+                        "finalize_card: after trimming, estimated total %d, trimmed %d items card=%s",
                         total_count, trimmed_count, card_id[:12],
                     )
 
@@ -887,7 +886,7 @@ class UnifiedControllerMixin:
             if not session._streaming_closed:
                 session.sequence += 1
                 _logger.info(
-                    "HLS: preservative seal closing streaming card=%s trace=%s seq=%d summary=%s",
+                    "HLS: finalize_card closing streaming card=%s trace=%s seq=%d summary=%s",
                     card_id[:12], session.card_trace_id, session.sequence,
                     repr(seal_summary[:40]) if seal_summary else "(empty)",
                 )
@@ -899,7 +898,7 @@ class UnifiedControllerMixin:
                 session._streaming_closed = True
             else:
                 _logger.info(
-                    "preservative seal: streaming already closed, skipping close_streaming card=%s",
+                    "finalize_card: streaming already closed, skipping close_streaming card=%s",
                     card_id[:12],
                 )
                 if seal_summary:
@@ -909,14 +908,14 @@ class UnifiedControllerMixin:
                             card_id, seal_summary, sequence=session.sequence,
                         )
                         _logger.info(
-                            "preservative seal: summary updated (streaming already closed) "
+                            "finalize_card: summary updated (streaming already closed) "
                             "card=%s seq=%d summary=%s",
                             card_id[:12], session.sequence,
                             repr(seal_summary[:40]),
                         )
                     except FeishuAPIError as e:
                         _logger.warning(
-                            "preservative seal: summary update failed (already closed) "
+                            "finalize_card: summary update failed (already closed) "
                             "card=%s error=%s",
                             card_id[:12], e,
                         )
@@ -926,7 +925,7 @@ class UnifiedControllerMixin:
         except FeishuAPIError as e:
             if e.code == CARDKIT_SEQUENCE_CONFLICT:
                 _logger.warning(
-                    "preservative seal: sequence conflict, retrying... card=%s seq=%d",
+                    "finalize_card: sequence conflict, retrying... card=%s seq=%d",
                     card_id[:12], session.sequence,
                 )
                 for retry in range(2):
@@ -972,7 +971,7 @@ class UnifiedControllerMixin:
                                     },
                                 })
                         retry_actions.extend(
-                            build_preservative_seal_actions(
+                            build_seal_actions(
                                 partial=partial,
                                 footer_data=footer_data,
                                 is_error=is_error,
@@ -1002,7 +1001,7 @@ class UnifiedControllerMixin:
                             session._streaming_closed = True
 
                         _logger.info(
-                            "preservative seal: retry %d succeeded card=%s",
+                            "finalize_card: retry %d succeeded card=%s",
                             retry + 1, card_id[:12],
                         )
                         return True
@@ -1016,7 +1015,7 @@ class UnifiedControllerMixin:
                         raise
                 # All retries exhausted
                 _logger.warning(
-                    "preservative seal: retry exhausted after sequence conflicts card=%s",
+                    "finalize_card: retry exhausted after sequence conflicts card=%s",
                     card_id[:12],
                 )
                 return False
@@ -1026,9 +1025,9 @@ class UnifiedControllerMixin:
         except Exception:
             return False
 
-    async def _do_linear_complete(self, session: CardSession) -> bool:
+    async def _complete_card_flow(self, session: CardSession) -> bool:
         """Complete the card with the unified panel architecture."""
-        if session.guard.should_skip("_do_linear_complete"):
+        if session.guard.should_skip("_complete_card_flow"):
             return False
 
         # ── Step 1: Wait for any in-progress flush to finish ──
@@ -1154,7 +1153,7 @@ class UnifiedControllerMixin:
             _logger.warning(
                 "linear complete: dirty data remains after %d drain rounds "
                 "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s msg=%s — "
-                "will be flushed by preservative seal before close_streaming",
+                "will be flushed by finalize_card before close_streaming",
                 _MAX_DRAIN_ROUNDS,
                 state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
                 (session.message_id or "?")[:12],
@@ -1172,7 +1171,7 @@ class UnifiedControllerMixin:
             session.state = CREATION_FAILED
             session.enter_terminal(
                 reason=TerminalReason.CREATION_FAILED,
-                source="_do_linear_complete",
+                source="_complete_card_flow",
             )
             return False
 
@@ -1196,7 +1195,7 @@ class UnifiedControllerMixin:
         )
 
         # ── Step 5: Preservative seal (the only completion path) ──
-        seal_ok = await self._preservative_seal(
+        seal_ok = await self._finalize_card(
             session,
             footer_data=footer_data,
             is_error=is_error,
@@ -1215,7 +1214,7 @@ class UnifiedControllerMixin:
             # v1.1.1: 释放重数据（unified_state/text/tool_use），减少内存占用
             # session 留最小元数据等 _prune_stale_sessions 清理
             try:
-                self._release_session_data(session)
+                self._reset_session_state(session)
             except Exception:
                 _logger.debug("HLS: release session data failed", exc_info=True)
             # v1.1.0: Record metrics
@@ -1228,11 +1227,11 @@ class UnifiedControllerMixin:
             session.state = CREATION_FAILED
             session.enter_terminal(
                 reason=TerminalReason.CREATION_FAILED,
-                source="_do_linear_complete_seal_failed",
+                source="_complete_card_flow_seal_failed",
             )
             # v1.1.1: 失败也释放重数据
             try:
-                self._release_session_data(session)
+                self._reset_session_state(session)
             except Exception:
                 _logger.debug("HLS: release session data failed", exc_info=True)
             # v1.1.0: Record metrics

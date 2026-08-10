@@ -1,7 +1,12 @@
-"""Centralized default values for hermes-lark-streaming v2.
+"""Centralized default values for lark-hls-v2 v2.
 
 ALL defaults live here. Changing footer layout, flush intervals,
 card TTL, etc. only requires editing this single file.
+
+Synced from v1.7.0 customizations (2026-08-10):
+  - Green panel theme, i18n (阿玛特拉斯/正在准备/思考中)
+  - 3-row footer with api_calls + history_offset
+  - Panel expanded, show_reasoning, flush 180ms, print_step 5
 """
 
 from __future__ import annotations
@@ -15,8 +20,8 @@ LINEAR: bool = True
 # ---------------------------------------------------------------------------
 # Panel
 # ---------------------------------------------------------------------------
-PANEL_EXPANDED: bool = False
-STREAMING_PANEL_EXPANDED: bool = False
+PANEL_EXPANDED: bool = True
+STREAMING_PANEL_EXPANDED: bool = True
 
 # ---------------------------------------------------------------------------
 # Print / streaming
@@ -24,9 +29,9 @@ STREAMING_PANEL_EXPANDED: bool = False
 # "fast" or "delay"
 PRINT_STRATEGY: str = "delay"
 # Typewriter characters per render tick (1–10)
-PRINT_STEP: int = 4
+PRINT_STEP: int = 5
 # stream_element API throttle interval in ms (70–2000)
-FLUSH_INTERVAL_MS: float = 200.0
+FLUSH_INTERVAL_MS: float = 180.0
 # Card TTL in seconds
 CARD_TTL_SEC: int = 600
 # Tool/rounding limits
@@ -34,15 +39,21 @@ MAX_TOOL_STEPS: int = 20
 MAX_REASONING_ROUNDS: int = 20
 
 # ---------------------------------------------------------------------------
+# Reasoning
+# ---------------------------------------------------------------------------
+# Show reasoning process in the panel (thinking rounds)
+SHOW_REASONING: bool = True
+
+# ---------------------------------------------------------------------------
 # Footer — the ONE place to change footer layout
 # ---------------------------------------------------------------------------
 # 3-row layout:
-#   Row 1: status, elapsed
-#   Row 2: model
+#   Row 1: status, elapsed, model, api_calls
+#   Row 2: tokens, context, cache, history_offset
 #   Row 3: cost, compression_exhausted
 FOOTER_FIELDS: list[list[str]] = [
-    ["status", "elapsed"],
-    ["model"],
+    ["status", "elapsed", "model", "api_calls"],
+    ["tokens", "context", "cache", "history_offset"],
     ["cost", "compression_exhausted"],
 ]
 # Show field labels (e.g. "Status: running" vs just "running")
@@ -53,16 +64,16 @@ FOOTER_SHOW_LABEL: bool = True
 # ---------------------------------------------------------------------------
 
 # Custom panel title (shown in collapsible panel header)
-PANEL_TITLE: str = "agent loop"
+PANEL_TITLE: str = "阿玛特拉斯"
 
 # Custom loading hint text (first card, before first token)
-LOADING_TEXT: str = "正在加载上下文..."
+LOADING_TEXT: str = "正在准备..."
 
 # Custom thinking hint text (when thinking starts)
-THINKING_TEXT: str = "正在思考..."
+THINKING_TEXT: str = "思考中..."
 
 # Auto-collapse panel when child count exceeds this threshold (0 = never)
-AUTO_COLLAPSE_THRESHOLD: int = 0
+AUTO_COLLAPSE_THRESHOLD: int = 10
 
 # Typing speed curve: "flat" (constant) or "answer_fast" (answer faster than thinking)
 SPEED_CURVE: str = "flat"
@@ -71,10 +82,10 @@ SPEED_CURVE: str = "flat"
 ANSWER_FAST_STREAM_MS: float = 150.0
 
 # Panel border color: "grey", "blue", "green", "orange", "red"
-PANEL_BORDER_COLOR: str = "grey"
+PANEL_BORDER_COLOR: str = "green"
 
 # Panel header text color: "grey", "blue", "green", "orange", "red"
-PANEL_HEADER_COLOR: str = "grey" 
+PANEL_HEADER_COLOR: str = "green"
 
 # ---------------------------------------------------------------------------
 # Gateway

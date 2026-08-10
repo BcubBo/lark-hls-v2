@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .config import Config
 from .state.phase import (
@@ -35,10 +35,7 @@ from .feishu import (
 from .flush import FlushController
 from .linear_mixin import UnifiedControllerMixin
 
-if TYPE_CHECKING:
-    pass
-
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 # State constants
 IDLE = CardPhase.IDLE
@@ -241,7 +238,7 @@ class StreamCardController(UnifiedControllerMixin):
             if not stale_session.is_terminal_phase and stale_session.state != COMPLETING:
                 stale_session.state = COMPLETING
                 self._fire_and_forget(
-                    self._do_linear_complete_with_fallback(stale_session),
+                    self._complete_with_fallback(stale_session),
                     stale_session._loop,
                 )
         except Exception:
@@ -271,7 +268,8 @@ class StreamCardController(UnifiedControllerMixin):
                 del self._continuation_map[k]
         session.flush.mark_completed()
 
-    def _release_session_data(self, session: CardSession) -> None:
+    def _reset_session_state(self, session: CardSession) -> None:
+        """Reset heavy session data after card finalization. Session keeps minimal metadata for _prune_stale_sessions."""
         session.unified_state = None
         if session.text is not None:
             session.text = TextState()
@@ -447,7 +445,7 @@ class StreamCardController(UnifiedControllerMixin):
         session._was_aborted = True
         session.state = ABORTED
         session.flush.mark_completed()
-        self._complete_session(session)
+        self._dispatch_completion(session)
 
     def on_interrupted(
         self, *, old_message_id: str, new_message_id: str, chat_id: str,
@@ -478,16 +476,16 @@ class StreamCardController(UnifiedControllerMixin):
                                 return
                             old_session.state = ABORTED
                             old_session.flush.mark_completed()
-                            self._complete_session(old_session)
+                            self._dispatch_completion(old_session)
                         self._fire_and_forget(_wait_and_abort(), loop)
                     else:
                         old_session.state = ABORTED
                         old_session.flush.mark_completed()
-                        self._complete_session(old_session)
+                        self._dispatch_completion(old_session)
                 else:
                     old_session.state = ABORTED
                     old_session.flush.mark_completed()
-                    self._complete_session(old_session)
+                    self._dispatch_completion(old_session)
 
         if self._sess_get(new_message_id) is None:
             loop = self._get_loop()
@@ -605,7 +603,7 @@ class StreamCardController(UnifiedControllerMixin):
             session.footer["cost_status"] = cost_status
 
         session.state = COMPLETING
-        self._complete_session(session)
+        self._dispatch_completion(session)
         return True
 
     def defer_background_review(
@@ -645,15 +643,13 @@ class StreamCardController(UnifiedControllerMixin):
 
     # ── Completion paths (delegate to linear_mixin) ─────────────────
 
-    def _complete_session(self, session: CardSession) -> None:
-        if session.linear and session.unified_state:
-            self._fire_and_forget(self._do_linear_complete_with_fallback(session), session._loop)
-        else:
-            self._fire_and_forget(self._do_linear_complete_with_fallback(session), session._loop)
+    def _dispatch_completion(self, session: CardSession) -> None:
+        """Dispatch card completion (async). Both linear and non-linear use the same path."""
+        self._fire_and_forget(self._complete_with_fallback(session), session._loop)
 
-    async def _do_linear_complete_with_fallback(self, session: CardSession) -> None:
+    async def _complete_with_fallback(self, session: CardSession) -> None:
         """线性模式完成，卡片不可用时回退为文本回复."""
-        # Snapshot fallback text before _do_linear_complete potentially releases it
+        # Snapshot fallback text before _complete_card_flow potentially releases it
         _fallback_text = ""
         if session.error_message:
             _fallback_text = session.error_message
@@ -663,7 +659,7 @@ class StreamCardController(UnifiedControllerMixin):
             _fallback_text = session.text.display_text
 
         try:
-            result = await self._do_linear_complete(session)
+            result = await self._complete_card_flow(session)
             if not result:
                 await self._send_text_fallback(session, fallback_text=_fallback_text)
         except Exception:
@@ -679,8 +675,8 @@ class StreamCardController(UnifiedControllerMixin):
         if not self._client:
             return
         try:
-            # 优先使用调用方传入的 fallback_text（在 _release_session_data 前快照的）
-            # 其次从 session 读取（用于 _do_linear_complete_with_fallback 以外的调用路径）
+            # 优先使用调用方传入的 fallback_text（在 _reset_session_state 前快照的）
+            # 其次从 session 读取（用于 _complete_with_fallback 以外的调用路径）
             text = fallback_text or session.error_message or (session.text.display_text if session.text else "") or ""
             if not text.strip():
                 return
@@ -702,7 +698,7 @@ class StreamCardController(UnifiedControllerMixin):
     # ── linear_mixin methods are inherited from UnifiedControllerMixin ──
     # _do_create_linear_card, _schedule_linear_flush, _do_unified_flush,
     # _upgrade_loading_hint_to_thinking, _linear_on_thinking,
-    # _preservative_seal, _do_linear_complete are all implemented in linear_mixin.py
+    # _finalize_card, _complete_card_flow are all implemented in linear_mixin.py
 
     async def _do_cron_deliver(self, chat_id: str, content: str) -> None:
         """Cron 投递 — 发送卡片到指定 chat."""
@@ -712,6 +708,53 @@ class StreamCardController(UnifiedControllerMixin):
         assert self._client is not None
         card = build_cron_card(content)
         await self._client.send_card_to_chat(chat_id, card)
+
+    async def _do_gateway_deliver(
+        self,
+        chat_id: str,
+        content: str,
+        *,
+        category: str = "",
+    ) -> tuple[str | None, str | None]:
+        """Send a gateway-internal message as a card."""
+        try:
+            from .card import build_gateway_card
+            await self._ensure_init()
+            assert self._client is not None
+            card = build_gateway_card(content, category=category)
+            card_msg_id = await self._client.send_card_to_chat(chat_id, card)
+            _logger.info(
+                "gateway card delivered: chat=%s category=%s card_msg_id=%s content_len=%d",
+                chat_id[:12], category or "system",
+                card_msg_id[:12] if card_msg_id else None, len(content),
+            )
+            return card_msg_id, None
+        except Exception:
+            _logger.warning("gateway card delivery failed", exc_info=True)
+            return None, None
+
+    async def _do_gateway_card_update(
+        self,
+        *,
+        chat_id: str,
+        card_msg_id: str,
+        card_id: str | None = None,
+        content: str,
+        category: str = "",
+    ) -> bool:
+        """Update a gateway card's content (called from edit_message interception)."""
+        try:
+            from .card import build_gateway_card
+            await self._ensure_init()
+            assert self._client is not None
+            card = build_gateway_card(content, category=category)
+            if card_id:
+                await self._client.cardkit_update(card_id, card)
+            else:
+                await self._client.update_card(card_msg_id, card)
+            return True
+        except Exception:
+            return False
 
     async def on_cron_deliver_async(
         self, *, chat_id: str, content: str, loop: asyncio.AbstractEventLoop,

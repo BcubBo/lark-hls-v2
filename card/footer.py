@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any
 
 from .i18n import _i18n, _t, _T
-from .md import _MAX_CRON_TABLES, _downgrade_tables, optimize_markdown_style, _split_long_text
 
 # Import defaults for footer layout
 from ..config.defaults import FOOTER_FIELDS, FOOTER_SHOW_LABEL

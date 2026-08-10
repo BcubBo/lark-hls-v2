@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from .manager import SessionManager
     from .interrupt import InterruptResolver
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 __all__ = ["ContinuationReactivation"]
 
@@ -47,7 +47,7 @@ class ContinuationReactivation:
       - ``fire_and_forget``: callable to schedule a coroutine on the event loop.
       - ``do_create_linear_card``: callable(session) → coroutine — creates the
         new card. Owned by the controller's linear mixin.
-      - ``do_linear_complete_with_fallback``: callable(session) → coroutine —
+      - ``complete_with_fallback``: callable(session) → coroutine —
         completes the stale session. Owned by the controller's linear mixin.
     """
 
@@ -59,14 +59,14 @@ class ContinuationReactivation:
         get_loop: Any,  # Callable[[], asyncio.AbstractEventLoop | None]
         fire_and_forget: Any,  # Callable[[Coroutine, AbstractEventLoop], None]
         do_create_linear_card: Any,  # Callable[[CardSession], Coroutine]
-        do_linear_complete_with_fallback: Any,  # Callable[[CardSession], Coroutine]
+        complete_with_fallback: Any,  # Callable[[CardSession], Coroutine]
     ) -> None:
         self._session_mgr = session_mgr
         self._interrupt_resolver = interrupt_resolver
         self._get_loop = get_loop
         self._fire_and_forget = fire_and_forget
         self._do_create_linear_card = do_create_linear_card
-        self._do_linear_complete_with_fallback = do_linear_complete_with_fallback
+        self._complete_with_fallback = complete_with_fallback
 
     # ── Public entry point ───────────────────────────────────────────
 
@@ -196,7 +196,7 @@ class ContinuationReactivation:
             ):
                 stale_session.state = CardPhase.COMPLETING
                 self._fire_and_forget(
-                    self._do_linear_complete_with_fallback(stale_session),
+                    self._complete_with_fallback(stale_session),
                     stale_session._loop,
                 )
         except Exception:

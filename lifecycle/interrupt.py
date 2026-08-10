@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 # v1.3.2: module-level constant (was previously re-defined on every on_interrupted call)
 _INTERRUPT_MAP_MAX = 200

@@ -14,7 +14,7 @@ __all__ = [
     "is_legal_transition",
 ]
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 class CardPhase:
     """Phases represent the lifecycle stage of a card session, from creation"""

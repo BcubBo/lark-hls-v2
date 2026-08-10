@@ -18,7 +18,7 @@ from ..state.tooluse import ToolUseTracker
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-_logger = logging.getLogger("hermes_lark_streaming")
+_logger = logging.getLogger("lark_hls_v2")
 
 __all__ = ["SessionManager"]
 
@@ -31,7 +31,7 @@ class SessionManager:
       - ``_prune_stale_sessions`` is called before new-session creation to
         garbage-collect terminal sessions past TTL.
       - ``_cleanup`` removes a single session from all internal structures.
-      - ``_release_session_data`` drops heavy payload after card seal,
+      - ``_reset_session_state`` drops heavy payload after card seal,
         keeping only minimal metadata for TTL tracking.
 
     Thread safety:
@@ -172,7 +172,7 @@ class SessionManager:
 
     # ── Heavy-data release ───────────────────────────────────────────
 
-    def _release_session_data(self, session: CardSession) -> None:
+    def _reset_session_state(self, session: CardSession) -> None:
         """After card seal, drop heavy payload; keep minimal metadata for TTL tracking."""
         session.unified_state = None
         if session.text is not None:
