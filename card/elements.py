@@ -69,6 +69,9 @@ __all__ = [
     'build_panel_header',
     'build_panel_children',
     '_count_tag_objects',
+    'build_card_header',
+    'build_quote_block',
+    'build_colored_divider',
 ]
 
 _IMG_MD_PATTERN = re.compile(r"!\[([^\]]*)\]\((img_[^)\s]+)\)")
@@ -245,13 +248,13 @@ def build_panel_header(*, reasoning_rounds: list, current_reasoning_text: str = 
 
     if has_reasoning and num_rounds > 0:
         en_rounds, zh_rounds = _T["rounds"]
-        en_parts.append(en_rounds.format(num_rounds))
-        zh_parts.append(zh_rounds.format(num_rounds))
+        en_parts.append(en_rounds.format(f'<text_tag color="blue">{num_rounds}</text_tag>'))
+        zh_parts.append(zh_rounds.format(f'<text_tag color="blue">{num_rounds}</text_tag>'))
 
     if tool_steps:
         en_tools, zh_tools = _T["tools_count"]
-        en_parts.append(en_tools.format(len(tool_steps)))
-        zh_parts.append(zh_tools.format(len(tool_steps)))
+        en_parts.append(en_tools.format(f'<text_tag color="purple">{len(tool_steps)}</text_tag>'))
+        zh_parts.append(zh_tools.format(f'<text_tag color="purple">{len(tool_steps)}</text_tag>'))
 
     reasoning_elapsed_ms = sum(r.elapsed_ms for r in reasoning_rounds)
     total_elapsed_ms = reasoning_elapsed_ms + tool_elapsed_ms
@@ -516,9 +519,9 @@ def _build_reasoning_round_title(round_index: int, elapsed_ms: float, finalized:
         "tag": "div",
         "icon": {
             "tag": "standard_icon",
-            "token": "robot-add_outlined",
+            "token": "time_outlined",
             "size": "16px 16px",
-            "color": "grey",
+            "color": color,
         },
         "text": {
             "tag": "lark_md",
@@ -710,10 +713,80 @@ def _build_footer_elements(
         },
     ]
 
+def build_card_header(
+    *,
+    title: str = "",
+    subtitle: str = "",
+    icon_token: str = "info_outlined",
+    template: str = "green",
+) -> dict:
+    """Card-level header (top banner above body elements).
+
+    Returns a ``header`` dict for the top-level card JSON.
+    Feishu renders this as a colored banner with icon + title + subtitle.
+    """
+    if not title:
+        title = _defaults.CARD_HEADER_TITLE
+    title_el: dict[str, Any] = {
+        "tag": "plain_text",
+        "content": title,
+        "i18n_content": _i18n(title, title),
+    }
+    header: dict[str, Any] = {
+        "title": title_el,
+        "icon": {
+            "tag": "standard_icon",
+            "token": icon_token,
+        },
+        "template": template,
+    }
+    if subtitle:
+        header["subtitle"] = {
+            "tag": "plain_text",
+            "content": subtitle,
+            "i18n_content": _i18n(subtitle, subtitle),
+        }
+    return header
+
+
+def build_quote_block(content: str, *, i18n: bool = False) -> dict:
+    """CardKit 2.0 quote_block — a highlighted quotation/aside.
+
+    Renders as a left-bordered, tinted background block.
+    Useful for key conclusions, warnings, or highlighted notes.
+    """
+    el: dict[str, Any] = {
+        "tag": "quote",
+        "text": {
+            "tag": "plain_text",
+            "content": content,
+        },
+    }
+    if i18n:
+        el["text"]["i18n_content"] = _i18n(content, content)
+    return el
+
+
+def build_colored_divider(*, color: str = "grey") -> dict:
+    """CardKit 2.0 colored hr divider.
+
+    Supported colors: blue, green, orange, red, purple, indigo,
+    turquoise, yellow, grey, violet, wathet, carmine.
+    Default is a standard grey divider.
+    """
+    if color == "grey":
+        return {"tag": "hr"}
+    return {
+        "tag": "hr",
+        "color": color,
+    }
+
+
 def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "") -> list[dict]:
     """构建保留式封卡 batch_update actions. Inserts error panel + footer via insert_before
     loading_icon, then deletes loading_hint + loading_icon. existing_elements filters deletes."""
     actions: list[dict] = []
+
 
     def _elem_exists(eid: str) -> bool:
         return existing_elements is None or eid in existing_elements

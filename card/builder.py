@@ -19,6 +19,9 @@ from .elements import (
     _loading_hint_element,
     _streaming_element,
     build_unified_panel,
+    build_card_header,
+    build_quote_block,
+    build_colored_divider,
 )
 from .i18n import _LOCALES, _T, _i18n, _t
 
@@ -94,7 +97,6 @@ def _enforce_card_element_limit(
                 break
         if hint_idx is not None:
             # Parse existing trimmed count from hint, then add new trimmed count
-            # e.g. "⚡ 还有 5 项已折叠" → existing_count=5, trimmed_count=3 → "⚡ 还有 8 项已折叠"
             old_hint = children[hint_idx]["content"]
             # Extract the number before "项" — simple string parsing, no regex needed
             existing_count = 0
@@ -143,9 +145,28 @@ def build_streaming_card_v2(
     include_unified_panel: bool = True,
     include_loading_hint: bool = True,
     include_answer_element: bool = True,
+    include_card_header: bool = True,
+    card_header_title: str = "",
+    card_header_subtitle: str = "",
+    card_header_icon: str = "",
+    card_header_template: str = "",
 ) -> dict[str, Any]:
     """Card lifecycle (v1.0.2+):"""
     elements: list[dict] = []
+
+    # ── Card-level header (colored banner with icon + title) ──
+    header: dict[str, Any] | None = None
+    if include_card_header:
+        try:
+            from ..config import defaults as _def
+            header = build_card_header(
+                title=card_header_title or _def.CARD_HEADER_TITLE,
+                subtitle=card_header_subtitle,
+                icon_token=card_header_icon or _def.CARD_HEADER_ICON,
+                template=card_header_template or _def.CARD_HEADER_TEMPLATE,
+            )
+        except Exception:
+            pass  # Graceful degradation — card works without header
 
     # ── Unified panel placeholder (linear mode — single panel for reasoning+tools) ──
     if include_unified_panel:
@@ -179,4 +200,7 @@ def build_streaming_card_v2(
         },
         "body": {"elements": elements},
     }
+    # ── Inject card-level header (colored banner) ──
+    if header is not None:
+        card["header"] = header
     return card

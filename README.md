@@ -2,15 +2,38 @@
 
 飞书（Lark）CardKit v2.0 流式卡片插件，为 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 提供实时 AI 回复的流式展示效果。
 
+> 本项目 fork 自 [hermes-lark-streaming](https://github.com/NousResearch/hermes-agent/tree/main/plugins/hermes-lark-streaming)（作者：[Aowen-Nowor](https://github.com/Aowen-Nowor)），在其基础上进行了深度重构、功能扩展和个性化定制。向原作者的开创性工作致敬。
+
+---
+
 ## 功能特性
 
+### 核心
+
 - 🎨 **流式卡片** — 实时打字效果，逐字输出 AI 回复
-- 🧠 **推理面板** — 可折叠面板展示 AI 思考过程和工具调用
-- 📊 **Footer 信息** — 状态、耗时、模型、token 用量、API 调用、上下文占比等
+- 🧠 **推理面板** — 可折叠面板展示 AI 思考过程和工具调用，带 text_tag 彩色徽章
+- 📊 **Footer 信息** — 3 行布局：状态/耗时/模型/API 调用、token/上下文/缓存/偏移、成本/上下文溢出
 - 🌐 **中英双语** — 完整 i18n 支持，飞书自动切换语言
-- ⚡ **智能节流** — 100ms 刷新间隔，200ms 面板跳动优化
-- 🔧 **高度可配置** — 颜色、文案、布局、行为全部通过 config.yaml 控制
+- ⚡ **智能节流** — 可配置刷新间隔（70-2000ms），打字速度曲线（flat/answer_fast）
 - 🛡️ **健壮容错** — 卡片不可用时自动降级为文本回复
+
+### v2.2.0 新增
+
+- 🏷️ **Card Header** — 卡片顶部彩色横幅，支持标题、图标、12 种背景色模板
+- 📌 **text_tag 徽章** — 面板标题中轮数（蓝色）和工具数（紫色）用彩色标签显示
+- 💬 **quote_block** — 引用块组件，高亮关键信息
+- ➖ **彩色分割线** — 支持 12 种颜色的 `<hr>` 分割线
+- 🎛️ **配置补全** — 33 个可配置项，全部支持 config.yaml 覆盖
+
+### 从 v2.1.0 继承
+
+- 6 个方法重命名（`_preservative_seal` → `_finalize_card` 等）
+- P0 修复：`hermes_adapter` → `hermes_compat`、`cardkit` → `card`
+- P1 修复：`defaults.py` 同步 v1.7.0、`schema.py` show_reasoning、aowen 模块补入
+- 性能优化：`elements.py` 和 `i18n.py` 先从 defaults 读常量，Config 仅做覆盖
+- icon 替换：sparkles/terminal/check_circle/rocket 等线条图标
+
+---
 
 ## 安装
 
@@ -38,23 +61,44 @@ plugins:
     - hermes-lark-streaming  # 禁用旧版（如有）
 
 lark_hls_v2:
+  # ── 插件核心 ──
+  enabled: true
+  linear: true
+  gateway_cards: true
+  # ── 流式/打印 ──
+  print_strategy: delay        # "fast" 或 "delay"
+  print_step: 5                # 打字速度（1-10 字符/tick）
+  flush_interval_ms: 180       # 流式更新间隔（70-2000ms）
+  card_ttl_sec: 600            # 卡片存活时间（秒）
+  speed_curve: flat            # "flat" 或 "answer_fast"
+  answer_fast_stream_ms: 150   # 回答阶段加速间隔
+  # ── Panel 面板 ──
+  panel_expanded: true
+  streaming_panel_expanded: false
+  auto_collapse_threshold: 10
+  panel_border_color: green    # grey/blue/green/orange/red
+  panel_header_color: green    # grey/blue/green/orange/red
+  # ── 推理 ──
+  show_reasoning: true
+  max_tool_steps: 20
+  max_reasoning_rounds: 20
+  # ── 个性化文本 ──
   panel_title: "Agent"
-  panel_border_color: green
-  panel_header_color: green
   loading_text: "正在准备..."
   thinking_text: "思考中..."
-  panel_expanded: true
-  streaming_panel_expanded: true
-  show_reasoning: true
-  flush_interval_ms: 180
-  print_step: 5
-  auto_collapse_threshold: 10
+  # ── Footer ──
   footer:
+    show_label: true
     fields:
       - [status, elapsed, model, api_calls]
       - [tokens, context, cache, history_offset]
       - [cost, compression_exhausted]
-    show_label: true
+  # ── Card Header（顶部横幅）──
+  card_header:
+    title: "Agent"
+    subtitle: ""                    # 留空则不显示
+    icon: info_outlined             # 飞书标准图标 token
+    template: orange                # 背景色（12 种可选）
 ```
 
 3. 重启 Gateway：
@@ -63,23 +107,48 @@ lark_hls_v2:
 systemctl --user restart hermes-gateway-bo.service
 ```
 
-## 配置项
+---
+
+## 完整配置项
 
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
+| `enabled` | `true` | 启用插件 |
+| `linear` | `true` | 线性模式（单卡片流式） |
+| `gateway_cards` | `true` | Gateway 卡片投递 |
+| `print_strategy` | `delay` | 打字策略："fast" 或 "delay" |
+| `print_step` | `5` | 每次输出字符数（1-10） |
+| `flush_interval_ms` | `180` | 流式更新间隔（70-2000ms） |
+| `card_ttl_sec` | `600` | 卡片存活时间（秒） |
+| `speed_curve` | `flat` | 打字速度曲线："flat" 或 "answer_fast" |
+| `answer_fast_stream_ms` | `150` | 回答阶段加速间隔 |
+| `panel_expanded` | `true` | 面板默认是否展开 |
+| `streaming_panel_expanded` | `true` | 流式时面板是否展开 |
+| `auto_collapse_threshold` | `10` | 子元素超此数自动折叠（0=不折叠） |
+| `panel_border_color` | `green` | 面板边框颜色 |
+| `panel_header_color` | `green` | 面板标题颜色 |
+| `show_reasoning` | `true` | 是否显示推理过程 |
+| `max_tool_steps` | `20` | 最大工具步数 |
+| `max_reasoning_rounds` | `20` | 最大推理轮数 |
 | `panel_title` | `agent loop` | 面板标题 |
-| `panel_border_color` | `grey` | 面板边框颜色 |
-| `panel_header_color` | `grey` | 面板标题颜色 |
 | `loading_text` | `正在加载上下文...` | 加载提示文案 |
 | `thinking_text` | `正在思考...` | 思考提示文案 |
-| `panel_expanded` | `false` | 面板默认是否展开 |
-| `streaming_panel_expanded` | `false` | 流式时面板是否展开 |
-| `show_reasoning` | `false` | 是否显示推理过程 |
-| `flush_interval_ms` | `200` | 刷新间隔（毫秒） |
-| `print_step` | `4` | 每次输出字符数 |
-| `auto_collapse_threshold` | `0` | 子元素超此数自动折叠（0=不折叠） |
-| `footer.fields` | 3行布局 | Footer 字段布局（2D 数组） |
 | `footer.show_label` | `true` | 是否显示字段标签 |
+| `footer.fields` | 3 行布局 | Footer 字段布局（2D 数组） |
+| `card_header.title` | `""` | Card Header 标题 |
+| `card_header.subtitle` | `""` | Card Header 副标题 |
+| `card_header.icon` | `info_outlined` | Header 图标 token |
+| `card_header.template` | `green` | Header 背景色（12 种可选） |
+
+### Card Header 颜色模板
+
+`blue` / `green` / `orange` / `red` / `purple` / `indigo` / `turquoise` / `yellow` / `grey` / `violet` / `wathet` / `carmine`
+
+### 面板边框/标题颜色
+
+`grey` / `blue` / `green` / `orange` / `red`
+
+---
 
 ## 架构
 
@@ -89,11 +158,12 @@ lark-hls-v2/
 ├── plugin.yaml          # 插件元数据
 ├── plugin/              # register/unregister
 ├── config/              # defaults.py + schema.py（配置单例）
+│   ├── defaults.py      # 所有默认值的单一真相源
+│   └── schema.py        # Config 单例，读 config.yaml → fallback defaults
 ├── controller.py        # 核心控制器（会话生命周期）
 ├── linear_mixin.py      # 卡片生命周期（创建→流式→密封）
 ├── card/                # 卡片渲染
-│   ├── elements.py      # UI 元素构建器
-│   ├── footer.py        # Footer 渲染
+│   ├── elements.py      # UI 元素构建器（panel/footer/header/quote/divider）
 │   ├── builder.py       # 卡片组装
 │   ├── special.py       # 特殊卡片（Gateway/Cron/Clarify）
 │   ├── i18n.py          # 中英双语
@@ -101,7 +171,7 @@ lark-hls-v2/
 │   └── styles.py        # 样式配置
 ├── interceptors/        # Monkey-patch 注入层
 │   ├── gateway.py       # GatewayRunner 拦截
-│   ├── adapter.py       # FeishuAdapter 拦截
+│   ├── adapter.py       # FeishuAdapter 拦截（消息发送抑制）
 │   ├── callbacks.py     # Agent 流式回调
 │   └── hooks.py         # Hook 函数
 ├── state/               # 状态管理
@@ -116,6 +186,8 @@ lark-hls-v2/
 └── lifecycle/           # 生命周期管理（预留）
 ```
 
+---
+
 ## 开发
 
 ```bash
@@ -123,21 +195,36 @@ lark-hls-v2/
 cd /home/ubuntu/workspace/hermes-lark-streaming-v2
 
 # 语法检查
-python3 -c "import py_compile; py_compile.compile('your_file.py', doraise=True)"
+python3 -m py_compile card/elements.py
 
 # 部署到插件目录
-rsync -av --exclude='tests/' --exclude='__pycache__' ./ ~/.hermes/profiles/bo/plugins/lark-hls-v2/
+rsync -av --delete --exclude='__pycache__' --exclude='.git' --exclude='tests/' \
+  ./ ~/.hermes/profiles/bo/plugins/lark-hls-v2/
 
 # 重启 Gateway
 systemctl --user restart hermes-gateway-bo.service
 ```
 
-## 许可证
+---
 
-MIT License. 详见 [LICENSE](LICENSE)。
+## 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|----------|
+| v2.2.0 | 2026-08-11 | Card Header、text_tag 徽章、quote_block、彩色分割线、配置补全 |
+| v2.1.0 | 2026-08-10 | 重命名为 lark-hls-v2、代码审查、6 方法重命名、P0/P1 修复、v1.7.0 同步 |
+| v2.0.0 | 2026-08-08 | 从 hermes-lark-streaming fork，初始重构 |
+
+---
 
 ## 致谢
 
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — Nous Research
-- [飞书开放平台](https://open.feishu.cn/) — CardKit 2.0 API
-- 原版 [hermes-lark-streaming](https://github.com/NousResearch/hermes-agent/tree/main/plugins) 插件
+- **[hermes-lark-streaming](https://github.com/NousResearch/hermes-agent/tree/main/plugins/hermes-lark-streaming)** — 原始插件，作者 [Aowen-Nowor](https://github.com/Aowen-Nowor)。本项目在其架构和代码基础上进行了深度重构和扩展。没有原作者的开创性工作，就没有这个项目。
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — Nous Research
+- **[飞书开放平台](https://open.feishu.cn/)** — CardKit 2.0 API
+
+---
+
+## 许可证
+
+MIT License. 详见 [LICENSE](LICENSE)。

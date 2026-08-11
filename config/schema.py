@@ -226,6 +226,38 @@ class Config:
         color = self._plugin_sec().get("panel_header_color", defaults.PANEL_HEADER_COLOR)
         return color if color in ("grey", "blue", "green", "orange", "red") else defaults.PANEL_HEADER_COLOR
 
+    # -- Card-level header ---------------------------------------------------
+
+    @property
+    def card_header_title(self) -> str:
+        header = self._plugin_sec().get("card_header", {})
+        if not isinstance(header, dict):
+            return str(self._plugin_sec().get("card_header_title", defaults.CARD_HEADER_TITLE))
+        return str(header.get("title", defaults.CARD_HEADER_TITLE))
+
+    @property
+    def card_header_subtitle(self) -> str:
+        header = self._plugin_sec().get("card_header", {})
+        if not isinstance(header, dict):
+            return str(self._plugin_sec().get("card_header_subtitle", defaults.CARD_HEADER_SUBTITLE))
+        return str(header.get("subtitle", defaults.CARD_HEADER_SUBTITLE))
+
+    @property
+    def card_header_icon(self) -> str:
+        header = self._plugin_sec().get("card_header", {})
+        if not isinstance(header, dict):
+            return str(self._plugin_sec().get("card_header_icon", defaults.CARD_HEADER_ICON))
+        return str(header.get("icon", defaults.CARD_HEADER_ICON))
+
+    @property
+    def card_header_template(self) -> str:
+        header = self._plugin_sec().get("card_header", {})
+        if not isinstance(header, dict):
+            return str(self._plugin_sec().get("card_header_template", defaults.CARD_HEADER_TEMPLATE))
+        tpl = str(header.get("template", defaults.CARD_HEADER_TEMPLATE))
+        valid = ("blue", "green", "orange", "red", "purple", "indigo", "turquoise", "yellow", "grey", "violet", "wathet", "carmine")
+        return tpl if tpl in valid else defaults.CARD_HEADER_TEMPLATE
+
     # -- Runtime-mutable (TTL-cached reads) ----------------------------------
 
     @property

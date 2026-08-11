@@ -140,6 +140,10 @@ class UnifiedControllerMixin:
                     streaming_panel_expanded=self._cfg.streaming_panel_expanded,
                     print_strategy=self._cfg.print_strategy,
                     print_step=self._cfg.print_step,
+                    include_card_header=True,
+                    card_header_title=self._cfg.card_header_title,
+                    card_header_icon=self._cfg.card_header_icon,
+                    card_header_template=self._cfg.card_header_template,
                 )
                 card_id = await self._client.cardkit_create(card)
                 card_msg_id = await self._client.reply_card_by_id(reply_to, card_id)
@@ -837,11 +841,9 @@ class UnifiedControllerMixin:
                         if hint_idx is not None:
                             old_hint = children[hint_idx]["content"]
                             # Parse existing trimmed count, then add new count
-                            # (same logic as _enforce_card_element_limit in cards.py)
                             existing_count = 0
                             _idx = old_hint.find("项")
                             if _idx > 0:
-                                # Walk backwards skipping whitespace, then collect digits
                                 _end = _idx
                                 while _end > 0 and old_hint[_end - 1] == ' ':
                                     _end -= 1

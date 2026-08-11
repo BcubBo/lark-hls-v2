@@ -20,7 +20,6 @@ _T: dict[str, tuple[str, str]] = {
     "elapsed": ("Elapsed {}", "耗时 {}"),
     "context": ("Context {}", "上下文 {}"),
     "processing": ("Processing...", "处理中..."),
-    "processing_prefix": ("💭 Processing...", "💭 处理中..."),
     "thought": ("Thought", "思考"),
     "thinking_panel": ("Thinking", "思考中"),
     "thought_for": ("Thought for {}", "思考了 {}"),
@@ -47,10 +46,16 @@ _T: dict[str, tuple[str, str]] = {
     "cost_estimated": ("${} (est.)", "${} (估算)"),
     "cost_actual": ("${} (actual)", "${} (实报)"),
     "cost_included": ("Free", "免费"),
+    # ── Card-level header ──
+    "card_header_title": ("Amateras", "阿玛特拉斯"),
+    "card_header_streaming": ("Thinking...", "思考中..."),
+    "card_header_completed": ("Completed", "已完成"),
+    "card_header_error": ("Error", "出错"),
+    "card_header_stopped": ("Stopped", "已停止"),
     # ── Unified panel i18n ──
-    "agent_process": ("agent loop", "agent loop"),
+    "agent_process": ("精神分裂了", "精神分裂了"),
     "rounds": ("{} rounds", "{} 轮"),
-    "tools_count": ("{} tools", "{} 个工具"),
+    "tools_count": ("{} tools", "用了 · {}个工具"),
     "round_n": ("Round {}", "第 {} 轮"),
 }
 

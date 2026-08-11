@@ -88,6 +88,18 @@ PANEL_BORDER_COLOR: str = "green"
 PANEL_HEADER_COLOR: str = "green"
 
 # ---------------------------------------------------------------------------
+# Card-level header (top-level banner above all body elements)
+# ---------------------------------------------------------------------------
+# Header title text
+CARD_HEADER_TITLE: str = "阿玛特拉斯"
+# Header subtitle text (empty = hidden)
+CARD_HEADER_SUBTITLE: str = ""
+# Header icon token (Feishu standard_icon token)
+CARD_HEADER_ICON: str = "info_outlined"
+# Header background color template: "blue", "green", "orange", "red", "purple", "indigo", "turquoise", "yellow", "grey", "violet", "wathet", "carmine"
+CARD_HEADER_TEMPLATE: str = "orange"
+
+# ---------------------------------------------------------------------------
 # Gateway
 # ---------------------------------------------------------------------------
 GATEWAY_CARDS: bool = True
