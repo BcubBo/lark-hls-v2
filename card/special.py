@@ -6,7 +6,7 @@ import ast
 from typing import Any
 
 from .i18n import _LOCALES, _T, _i18n, _t
-from .elements import _escape_md
+from .elements import _escape_md, build_card_header
 from .md import (
     _MAX_CRON_TABLES,
     _downgrade_tables,
@@ -91,7 +91,8 @@ def build_cron_card(content: str) -> dict[str, Any]:
     }
     if not content.strip():
         return card
-    summary = content[:120].replace("\n", " ").replace("```", "").strip()
+    from ..config import defaults as _def
+    summary = content[:_def.SUMMARY_MAX_LENGTH].replace("\n", " ").replace("```", "").strip()
     if summary:
         card["config"]["summary"] = {"content": summary}
     for chunk in _split_long_text(_downgrade_tables(optimize_markdown_style(content), limit=_MAX_CRON_TABLES)):
@@ -126,7 +127,8 @@ def build_gateway_card(content: str, *, category: str = "", status_label: str = 
         "body": {"elements": elements},
     }
 
-    summary = content[:120].replace("\n", " ").replace("```", "").strip() if content.strip() else ""
+    from ..config import defaults as _def
+    summary = content[:_def.SUMMARY_MAX_LENGTH].replace("\n", " ").replace("```", "").strip() if content.strip() else ""
     if summary:
         card["config"]["summary"] = {"content": summary}
 
@@ -221,6 +223,7 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
             "streaming_mode": False,
             "locales": _LOCALES,
         },
+        "header": build_card_header(title="需确认", icon_token="info_outlined", template="blue"),
         "body": {"elements": elements},
     }
     return card
@@ -300,6 +303,7 @@ def build_clarify_submitted_card(*, question: str, selected: str, clarify_id: st
             "streaming_mode": False,
             "locales": _LOCALES,
         },
+        "header": build_card_header(title="已提交", icon_token="info_outlined", template="blue"),
         "body": {"elements": elements},
     }
     return card
@@ -357,6 +361,7 @@ def build_clarify_confirmed_card(*, question: str, selected: str) -> dict[str, A
             "streaming_mode": False,
             "locales": _LOCALES,
         },
+        "header": build_card_header(title="已确认", icon_token="info_outlined", template="blue"),
         "body": {"elements": elements},
     }
     return card

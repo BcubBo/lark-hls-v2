@@ -267,7 +267,7 @@ def build_panel_header(*, reasoning_rounds: list, current_reasoning_text: str = 
     zh_full = " · ".join(zh_parts)
 
     title_el = {
-        "tag": "plain_text",
+        "tag": "lark_md",
         "content": en_full,
         "i18n_content": _i18n(en_full, zh_full),
         "text_size": "notation",
@@ -728,9 +728,9 @@ def build_card_header(
     if not title:
         title = _defaults.CARD_HEADER_TITLE
     title_el: dict[str, Any] = {
-        "tag": "plain_text",
-        "content": title,
-        "i18n_content": _i18n(title, title),
+        "tag": "lark_md",
+        "content": f"**{title}**",
+        "i18n_content": _i18n(f"**{title}**", f"**{title}**"),
     }
     header: dict[str, Any] = {
         "title": title_el,

@@ -23,7 +23,6 @@ _T: dict[str, tuple[str, str]] = {
     "thought": ("Thought", "思考"),
     "thinking_panel": ("Thinking", "思考中"),
     "thought_for": ("Thought for {}", "思考了 {}"),
-    "done": ("Done.", "完成。"),
     "api_calls": ("API", "API"),
     "history_offset": ("Offset", "偏移量"),
     "error_panel": ("Error", "错误信息"),
@@ -35,7 +34,6 @@ _T: dict[str, tuple[str, str]] = {
     # ── Context loading hint (first card only, removed on first token) ──
     "loading_context": ("Loading context...", "正在加载上下文..."),
     "thinking": ("Thinking...", "正在思考..."),
-    "loading_context_thinking": ("Loading context & thinking...", "加载上下文并思考中..."),
     # ── Clarify interactive card (three-state: pending / submitted / confirmed) ──
     "clarify_select_placeholder": ("Quick select...", "快速选择..."),
     "clarify_input_placeholder": ("Type your answer...", "请输入你的回答..."),

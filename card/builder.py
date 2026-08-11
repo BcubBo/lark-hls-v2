@@ -124,14 +124,6 @@ def _enforce_card_element_limit(
     panel["elements"] = children
     return card
 
-def _build_summary(text: str) -> dict[str, Any]:
-    """Feishu CardKit 2.0 displays ``i18n_content.<locale>`` for users"""
-    truncated = text[:120].replace("\n", " ").replace("```", "").strip()
-    return {
-        "content": truncated,
-        "i18n_content": _i18n(truncated, truncated),
-    }
-
 def build_streaming_card_v2(
     *,
     tool_steps: list[dict] | None = None,

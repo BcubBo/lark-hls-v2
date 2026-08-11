@@ -229,7 +229,7 @@ def _apply_gateway_runner_patches() -> bool:
             ', '.join(_patched_methods),
         )
         return True
-    except (ImportError, AttributeError) as e:
+    except Exception as e:
         _logger.error(
             "lark-hls-v2: GatewayRunner patch FAILED — "
             "gateway.run found but incompatible. "
@@ -540,7 +540,7 @@ def _apply_create_adapter_hook() -> bool:
     """
     try:
         from gateway.platform_registry import platform_registry as _pr
-    except (ImportError, AttributeError):
+    except Exception:
         _logger.info(
             "lark-hls-v2: platform_registry not available yet, "
             "create_adapter hook deferred (will retry on next apply_patches)"

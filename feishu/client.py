@@ -503,7 +503,8 @@ class FeishuClient:
             }
         }
         if summary:
-            truncated = summary[:120]
+            from ..config import defaults as _def
+            truncated = summary[:_def.SUMMARY_MAX_LENGTH]
             settings["config"]["summary"] = {
                 "content": truncated,
                 "i18n_content": {
@@ -531,7 +532,8 @@ class FeishuClient:
         """Update the card summary text WITHOUT closing streaming mode."""
         if not summary:
             return
-        truncated = summary[:120]
+        from ..config import defaults as _def
+        truncated = summary[:_def.SUMMARY_MAX_LENGTH]
         settings: dict[str, Any] = {
             "config": {
                 "summary": {

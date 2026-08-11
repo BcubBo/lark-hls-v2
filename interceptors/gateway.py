@@ -577,7 +577,7 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
                     try:
                         from gateway.platforms.base import SendResult
                         return SendResult(success=True)
-                    except (ImportError, AttributeError):
+                    except Exception:
                         return None
                 return await original_send(chat_id, content, **send_kwargs)
 
@@ -672,7 +672,7 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
                 if pn in ("feishu", "lark"):
                     feishu_adapter = adapters[p]
                     break
-        except (ImportError, AttributeError):
+        except Exception:
             pass
 
         if feishu_adapter is None:
@@ -715,7 +715,7 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
                     try:
                         from gateway.platforms.base import SendResult
                         return SendResult(success=True)
-                    except (ImportError, AttributeError):
+                    except Exception:
                         return None
             except Exception:
                 pass

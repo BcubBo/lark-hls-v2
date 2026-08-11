@@ -34,6 +34,8 @@ PRINT_STEP: int = 5
 FLUSH_INTERVAL_MS: float = 180.0
 # Card TTL in seconds
 CARD_TTL_SEC: int = 600
+# Summary truncation max length (characters) for card seal/title
+SUMMARY_MAX_LENGTH: int = 120
 # Tool/rounding limits
 MAX_TOOL_STEPS: int = 20
 MAX_REASONING_ROUNDS: int = 20

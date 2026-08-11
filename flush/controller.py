@@ -144,7 +144,7 @@ class FlushController:
         try:
             await do_flush()
         except Exception:
-            _logger.debug("flush error suppressed", exc_info=True)
+            _logger.warning("flush error suppressed", exc_info=True)
         finally:
             self._flush_in_progress = False
             self._last_update_time = time.monotonic()

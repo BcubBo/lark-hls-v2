@@ -52,7 +52,7 @@ class HermesCompat:
         try:
             from gateway.run import GatewayRunner
             self.gateway_runner_class = GatewayRunner
-        except (ImportError, AttributeError):
+        except Exception:
             _logger.debug("HLS: GatewayRunner not available yet")
         
         # AIAgent
@@ -60,7 +60,7 @@ class HermesCompat:
             from run_agent import AIAgent
             self.aiagent_class = AIAgent
             self.run_agent_module = sys.modules.get("run_agent")
-        except (ImportError, AttributeError):
+        except Exception:
             _logger.debug("HLS: AIAgent not available yet")
         
         # FeishuAdapter — 抽取到 _resolve_feishu_adapter()，
@@ -96,7 +96,7 @@ class HermesCompat:
                     cls = getattr(mod, "FeishuAdapter")
                     _logger.debug("HLS: FeishuAdapter resolved via %s", _mod_path)
                     return cls
-            except (ImportError, AttributeError):
+            except Exception:
                 if _mod_path == "hermes_plugins.feishu_platform.adapter":
                     pass
                 continue
@@ -158,7 +158,7 @@ class HermesCompat:
             import agent.conversation_loop as _mod
             self.conversation_loop_module = _mod
             self.conversation_loop_func = _func
-        except (ImportError, AttributeError):
+        except Exception:
             pass
     
     @property

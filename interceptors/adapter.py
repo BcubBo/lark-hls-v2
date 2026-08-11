@@ -54,7 +54,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
             from gateway.platforms.base import EphemeralReply
             if isinstance(content, EphemeralReply):
                 return await orig_send(self_feishu, chat_id, content, reply_to=reply_to, metadata=metadata, **kwargs)
-        except (ImportError, AttributeError):
+        except Exception:
             pass  # EphemeralReply not available in this Hermes version
 
         if not isinstance(content, str):
@@ -80,7 +80,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                     try:
                         from gateway.platforms.base import SendResult
                         return SendResult(success=True)
-                    except (ImportError, AttributeError):
+                    except Exception:
                         return None
                 else:
                     try:
@@ -98,7 +98,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                                 try:
                                     from gateway.platforms.base import SendResult
                                     return SendResult(success=True)
-                                except (ImportError, AttributeError):
+                                except Exception:
                                     return None
                     except Exception:
                         _logger.debug("HLS: suppressed exception", exc_info=True)
@@ -140,7 +140,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                             try:
                                 from gateway.platforms.base import SendResult
                                 return SendResult(success=True)
-                            except (ImportError, AttributeError):
+                            except Exception:
                                 return None
             except Exception:
                 _logger.debug("HLS: suppressed exception", exc_info=True)
@@ -190,7 +190,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                     try:
                         from gateway.platforms.base import SendResult
                         return SendResult(success=True, message_id=card_msg_id)
-                    except (ImportError, AttributeError):
+                    except Exception:
                         return None
             else:
                 _logger.info(
@@ -281,7 +281,7 @@ def _wrap_feishu_adapter_edit(orig_edit: Callable) -> Callable:
                             try:
                                 from gateway.platforms.base import SendResult
                                 return SendResult(success=True)
-                            except (ImportError, AttributeError):
+                            except Exception:
                                 return None
             except Exception:
                 pass
@@ -344,7 +344,7 @@ def _wrap_feishu_adapter_add_reaction(orig_add_reaction: Callable) -> Callable:
                                 try:
                                     from gateway.platforms.base import SendResult
                                     return SendResult(success=True)
-                                except (ImportError, AttributeError):
+                                except Exception:
                                     return None
                 except Exception:
                     pass
@@ -387,7 +387,7 @@ def _wrap_feishu_adapter_delete_reaction(orig_delete_reaction: Callable) -> Call
                                 try:
                                     from gateway.platforms.base import SendResult
                                     return SendResult(success=True)
-                                except (ImportError, AttributeError):
+                                except Exception:
                                     return None
                 except Exception:
                     pass
@@ -522,14 +522,14 @@ def _wrap_feishu_adapter_send_clarify(orig_send_clarify: Callable) -> Callable:
                 from tools.clarify_gateway import mark_awaiting_text
                 mark_awaiting_text(clarify_id)
                 _logger.debug("clarify card: mark_awaiting_text called for clarify_id=%s", (clarify_id or "?")[:12])
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.debug("clarify card: mark_awaiting_text failed (%s), card callback will handle resolution", e)
 
             # Return success to suppress the original text-based send_clarify
             try:
                 from gateway.platforms.base import SendResult
                 return SendResult(success=True, message_id=card_msg_id)
-            except (ImportError, AttributeError):
+            except Exception:
                 return None
 
         except Exception as e:
@@ -769,19 +769,19 @@ def _handle_clarify_card_action(
                     log_message="clarify card: failed to schedule retry resolve",
                     log_level=logging.WARNING,
                 )
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: retry resolve scheduling failed: %s", e)
                 try:
                     from tools.clarify_gateway import resolve_gateway_clarify
                     resolve_gateway_clarify(clarify_id, stored_selection)
-                except (ImportError, Exception) as e2:
+                except Exception as e2:
                     _logger.warning("clarify card: synchronous retry resolve also failed: %s", e2)
         else:
             # No event loop — synchronous fallback
             try:
                 from tools.clarify_gateway import resolve_gateway_clarify
                 resolve_gateway_clarify(clarify_id, stored_selection)
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: synchronous retry resolve failed: %s", e)
 
         # Return the same submitted card (soft lock with retry button)
@@ -834,20 +834,20 @@ def _handle_clarify_card_action(
                     log_message="clarify card: failed to schedule resolve_gateway_clarify",
                     log_level=logging.WARNING,
                 )
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: resolve_gateway_clarify scheduling failed: %s", e)
                 # Try synchronous fallback
                 try:
                     from tools.clarify_gateway import resolve_gateway_clarify
                     resolve_gateway_clarify(clarify_id, choice_text)
-                except (ImportError, Exception) as e2:
+                except Exception as e2:
                     _logger.warning("clarify card: synchronous resolve also failed: %s", e2)
         else:
             # No event loop — synchronous fallback
             try:
                 from tools.clarify_gateway import resolve_gateway_clarify
                 resolve_gateway_clarify(clarify_id, choice_text)
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: synchronous resolve failed: %s", e)
 
         # Return submitted card (soft lock with retry button) — don't cleanup yet
@@ -890,19 +890,19 @@ def _handle_clarify_card_action(
                     log_message="clarify card: failed to schedule resolve_gateway_clarify",
                     log_level=logging.WARNING,
                 )
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: resolve_gateway_clarify scheduling failed: %s", e)
                 try:
                     from tools.clarify_gateway import resolve_gateway_clarify
                     resolve_gateway_clarify(clarify_id, input_text)
-                except (ImportError, Exception) as e2:
+                except Exception as e2:
                     _logger.warning("clarify card: synchronous resolve also failed: %s", e2)
         else:
             # No event loop — synchronous fallback
             try:
                 from tools.clarify_gateway import resolve_gateway_clarify
                 resolve_gateway_clarify(clarify_id, input_text)
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: synchronous resolve failed: %s", e)
 
         # Return submitted card (soft lock with retry button) — don't cleanup yet
@@ -947,19 +947,19 @@ def _handle_clarify_card_action(
                     log_message="clarify card: failed to schedule resolve_gateway_clarify",
                     log_level=logging.WARNING,
                 )
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: resolve_gateway_clarify scheduling failed: %s", e)
                 try:
                     from tools.clarify_gateway import resolve_gateway_clarify
                     resolve_gateway_clarify(clarify_id, input_text)
-                except (ImportError, Exception) as e2:
+                except Exception as e2:
                     _logger.warning("clarify card: synchronous resolve also failed: %s", e2)
         else:
             # No event loop — synchronous fallback
             try:
                 from tools.clarify_gateway import resolve_gateway_clarify
                 resolve_gateway_clarify(clarify_id, input_text)
-            except (ImportError, Exception) as e:
+            except Exception as e:
                 _logger.warning("clarify card: synchronous resolve failed: %s", e)
 
         # Return submitted card (soft lock with retry button) — don't cleanup yet

@@ -11,7 +11,7 @@
 ### 核心
 
 - 🎨 **流式卡片** — 实时打字效果，逐字输出 AI 回复
-- 🧠 **推理面板** — 可折叠面板展示 AI 思考过程和工具调用，带 text_tag 彩色徽章
+- 🧠 **推理面板** — 可折叠面板展示 AI 思考过程和工具调用，text_tag 彩色徽章（轮数蓝色、工具数紫色）
 - 📊 **Footer 信息** — 3 行布局：状态/耗时/模型/API 调用、token/上下文/缓存/偏移、成本/上下文溢出
 - 🌐 **中英双语** — 完整 i18n 支持，飞书自动切换语言
 - ⚡ **智能节流** — 可配置刷新间隔（70-2000ms），打字速度曲线（flat/answer_fast）
@@ -19,19 +19,20 @@
 
 ### v2.2.0 新增
 
-- 🏷️ **Card Header** — 卡片顶部彩色横幅，支持标题、图标、12 种背景色模板
+- 🏷️ **Card Header** — 卡片顶部彩色横幅，标题加粗，支持 12 种背景色模板
+  - 流式卡片：橙色 header，显示「**阿玛特拉斯**」
+  - Clarify 卡片：蓝色 header，按状态显示「**需确认**」/「**已提交**」/「**已确认**」
 - 📌 **text_tag 徽章** — 面板标题中轮数（蓝色）和工具数（紫色）用彩色标签显示
 - 💬 **quote_block** — 引用块组件，高亮关键信息
 - ➖ **彩色分割线** — 支持 12 种颜色的 `<hr>` 分割线
 - 🎛️ **配置补全** — 33 个可配置项，全部支持 config.yaml 覆盖
 
-### 从 v2.1.0 继承
+### 代码质量
 
-- 6 个方法重命名（`_preservative_seal` → `_finalize_card` 等）
-- P0 修复：`hermes_adapter` → `hermes_compat`、`cardkit` → `card`
-- P1 修复：`defaults.py` 同步 v1.7.0、`schema.py` show_reasoning、aowen 模块补入
-- 性能优化：`elements.py` 和 `i18n.py` 先从 defaults 读常量，Config 仅做覆盖
-- icon 替换：sparkles/terminal/check_circle/rocket 等线条图标
+- 🧹 **P0 修复** — 裸 except 全部补日志，消除静默失败
+- 🔧 **P1 修复** — 31 处 `(ImportError, Exception)` 反模式修复
+- 🗑️ **死代码清理** — 删除 lifecycle/ 目录、未使用函数、废弃 i18n key、重复常量
+- 📏 **魔法数字提取** — `SUMMARY_MAX_LENGTH`、`_DRAIN_ROUNDS_MAX` 等提取为常量
 
 ---
 
@@ -182,8 +183,7 @@ lark-hls-v2/
 │   └── tooluse.py       # 工具追踪
 ├── feishu/              # 飞书 API 客户端
 ├── flush/               # 节流控制器
-├── aowen/               # /aowen 命令处理
-└── lifecycle/           # 生命周期管理（预留）
+└── aowen/               # /aowen 命令处理
 ```
 
 ---
@@ -211,7 +211,7 @@ systemctl --user restart hermes-gateway-bo.service
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
-| v2.2.0 | 2026-08-11 | Card Header、text_tag 徽章、quote_block、彩色分割线、配置补全 |
+| v2.2.0 | 2026-08-11 | Card Header（橙色/蓝色）、Clarify 卡片状态标题、text_tag 徽章、quote_block、彩色分割线、P0-P2 审计修复、配置补全 |
 | v2.1.0 | 2026-08-10 | 重命名为 lark-hls-v2、代码审查、6 方法重命名、P0/P1 修复、v1.7.0 同步 |
 | v2.0.0 | 2026-08-08 | 从 hermes-lark-streaming fork，初始重构 |
 

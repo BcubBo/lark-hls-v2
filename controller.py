@@ -693,7 +693,7 @@ class StreamCardController(UnifiedControllerMixin):
                 len(content),
             )
         except Exception:
-            pass
+            _logger.exception('send_text_fallback failed')
 
     # ── linear_mixin methods are inherited from UnifiedControllerMixin ──
     # _do_create_linear_card, _schedule_linear_flush, _do_unified_flush,

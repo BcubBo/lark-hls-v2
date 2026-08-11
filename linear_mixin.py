@@ -59,6 +59,10 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger("lark_hls_v2")
 
+# Drain-loop limits for final flush before seal
+_DRAIN_ROUNDS_MAX: int = 8
+_DRAIN_YIELD_SEC: float = 0.020  # 20ms yield — enough for worker thread callbacks
+
 
 def _build_seal_summary(state: UnifiedLinearState | None) -> str:
     """Build seal summary from state — answer text or fallback to reasoning."""
@@ -68,7 +72,8 @@ def _build_seal_summary(state: UnifiedLinearState | None) -> str:
     if not summary_text and state.reasoning_rounds:
         summary_text = state.reasoning_rounds[-1].text if state.reasoning_rounds else ""
     if summary_text:
-        return summary_text[:120].replace("\n", " ").replace("```", "").strip()
+        from .config import defaults as _def
+        return summary_text[:_def.SUMMARY_MAX_LENGTH].replace("\n", " ").replace("```", "").strip()
     return ""
 
 
@@ -96,10 +101,6 @@ async def _fallback_write_answer(
     except FeishuAPIError as e:
         _logger.warning("HLS: fallback write answer failed: %s", e)
         return False
-
-
-# NOTE: This is the *server-side flush interval* (how often we send
-_ANSWER_FAST_STREAM_MS = 0.150  # answer-only 节流间隔（150ms，v1.2.1 从 70ms 上调）
 
 
 class UnifiedControllerMixin:
@@ -1025,6 +1026,7 @@ class UnifiedControllerMixin:
                 session._streaming_closed = True
             return False
         except Exception:
+            _logger.exception('finalize_card unexpected error')
             return False
 
     async def _complete_card_flow(self, session: CardSession) -> bool:
@@ -1038,9 +1040,7 @@ class UnifiedControllerMixin:
         # without being flushed.  We must drain it ALL here, before
         # the "footer appears before content finishes" bug.
         state = session.unified_state
-        _MAX_DRAIN_ROUNDS = 8
-        _DRAIN_YIELD_SEC = 0.020  # 20ms yield — enough for worker thread callbacks
-        for _drain_round in range(_MAX_DRAIN_ROUNDS):
+        for _drain_round in range(_DRAIN_ROUNDS_MAX):
             if not (
                 state is not None
                 and session.card_id
@@ -1052,7 +1052,7 @@ class UnifiedControllerMixin:
             _logger.info(
                 "linear complete: drain round %d/%d "
                 "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s msg=%s",
-                _drain_round + 1, _MAX_DRAIN_ROUNDS,
+                _drain_round + 1, _DRAIN_ROUNDS_MAX,
                 state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
                 (session.message_id or "?")[:12],
             )
@@ -1147,7 +1147,7 @@ class UnifiedControllerMixin:
                     else:
                         _logger.warning("HLS: drain answer failed: %s", e)
 
-            if _drain_round < _MAX_DRAIN_ROUNDS - 1:
+            if _drain_round < _DRAIN_ROUNDS_MAX - 1:
                 await asyncio.sleep(_DRAIN_YIELD_SEC)
 
         # ── Final drain check: log warning if dirty data remains ──
@@ -1156,7 +1156,7 @@ class UnifiedControllerMixin:
                 "linear complete: dirty data remains after %d drain rounds "
                 "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s msg=%s — "
                 "will be flushed by finalize_card before close_streaming",
-                _MAX_DRAIN_ROUNDS,
+                _DRAIN_ROUNDS_MAX,
                 state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
                 (session.message_id or "?")[:12],
             )
