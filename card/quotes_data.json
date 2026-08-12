@@ -1,0 +1,3029 @@
+{
+    "scenes": {
+        "greeting": [
+            {
+                "text": "说到做到，这就是我的忍道！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我要成为火影！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我来了",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "哟，你们好啊",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "青春就是要燃烧！",
+                "character": "凯",
+                "source": "火影忍者"
+            },
+            {
+                "text": "哼，一群废物",
+                "character": "我爱罗",
+                "source": "火影忍者"
+            },
+            {
+                "text": "让一切归于虚无",
+                "character": "佩恩",
+                "source": "火影忍者"
+            },
+            {
+                "text": "见识一下吧",
+                "character": "大蛇丸",
+                "source": "火影忍者"
+            },
+            {
+                "text": "你还差得远呢",
+                "character": "鼬",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我是要成为海贼王的男人！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "我要成为世界第一大剑豪！",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "能让我为你而死吗",
+                "character": "山治",
+                "source": "海贼王"
+            },
+            {
+                "text": "航海士是不能迷路的",
+                "character": "娜美",
+                "source": "海贼王"
+            },
+            {
+                "text": "继承我的意志吧",
+                "character": "艾斯",
+                "source": "海贼王"
+            },
+            {
+                "text": "新时代来临了",
+                "character": "红发",
+                "source": "海贼王"
+            },
+            {
+                "text": "时代在召唤我们",
+                "character": "白胡子",
+                "source": "海贼王"
+            },
+            {
+                "text": "我要活下去",
+                "character": "罗宾",
+                "source": "海贼王"
+            },
+            {
+                "text": "准备好了吗？要上了！",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "我是赛亚人的王子！",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "切，不值一提",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "战斗力只有五的渣滓",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "我会保护你的",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "不要畏惧前行",
+                "character": "露琪亚",
+                "source": "死神"
+            },
+            {
+                "text": "散落吧，千本樱",
+                "character": "白哉",
+                "source": "死神"
+            },
+            {
+                "text": "塔塔开！",
+                "character": "艾伦",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "放弃的话就到此为止了",
+                "character": "三笠",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "我没什么可说的",
+                "character": "利威尔",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "我要成为最强的猎鬼人！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "雷之呼吸！",
+                "character": "善逸",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "猪突猛进！",
+                "character": "伊之助",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "打起精神来",
+                "character": "虎杖",
+                "source": "咒术回战"
+            },
+            {
+                "text": "我可是最强的",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "领域展开",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "我要去找爸爸！",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "嘻嘻，真有趣",
+                "character": "西索",
+                "source": "猎人"
+            },
+            {
+                "text": "我要夺回一切",
+                "character": "酷拉皮卡",
+                "source": "猎人"
+            },
+            {
+                "text": "今天的风儿甚是喧嚣",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "我只是个万事屋老板",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "啊？你在说什么",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "银桑我来了",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "等价交换！",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "又来了啊",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "我是英雄",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "呀咧呀咧",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "这是替身攻击！",
+                "character": "乔瑟夫",
+                "source": "JOJO"
+            },
+            {
+                "text": "我不做人了！",
+                "character": "DIO",
+                "source": "JOJO"
+            },
+            {
+                "text": "坐下！",
+                "character": "戈薇",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "半妖，给我让开",
+                "character": "杀生丸",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "交给我吧！",
+                "character": "绿谷",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "啊啊啊啊啊！",
+                "character": "爆豪",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "因为我来了！",
+                "character": "欧尔麦特",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "我叫夏目贵志",
+                "character": "夏目",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "吾辈是猫咪老师！",
+                "character": "猫咪老师",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "Yes, My Lord",
+                "character": "塞巴斯蒂安",
+                "source": "黑执事"
+            },
+            {
+                "text": "这是我的世界",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "世界是错误的",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "哇酷哇酷！",
+                "character": "安妮亚",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "优雅，太优雅了",
+                "character": "约尔",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "开饭了！",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "不要忘记你的名字",
+                "character": "白龙",
+                "source": "千与千寻"
+            },
+            {
+                "text": "我要打排球！",
+                "character": "日向",
+                "source": "排球少年"
+            },
+            {
+                "text": "我是灵幻新隆",
+                "character": "灵幻",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "我们要逃出去",
+                "character": "艾玛",
+                "source": "约定的梦幻岛"
+            },
+            {
+                "text": "我能实现你的愿望",
+                "character": "丘比",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "我出发了",
+                "character": "铃芽",
+                "source": "铃芽之旅"
+            },
+            {
+                "text": "你的名字是？",
+                "character": "宫水三叶",
+                "source": "你的名字"
+            },
+            {
+                "text": "天气什么的管它呢",
+                "character": "森岛帆高",
+                "source": "天气之子"
+            },
+            {
+                "text": "燃烧吧，我的小宇宙！",
+                "character": "星矢",
+                "source": "圣斗士星矢"
+            },
+            {
+                "text": "你已经死了",
+                "character": "健次郎",
+                "source": "北斗神拳"
+            },
+            {
+                "text": "要来一发吗？",
+                "character": "马琳",
+                "source": "七大罪"
+            },
+            {
+                "text": "我的钻头可是能突破天际的！",
+                "character": "西蒙",
+                "source": "天元突破"
+            },
+            {
+                "text": "那么，开始吧",
+                "character": "鲁路修",
+                "source": "Code Geass"
+            },
+            {
+                "text": "今天也要加油哦！",
+                "character": "田中龙",
+                "source": "暗杀教室"
+            },
+            {
+                "text": "哼，来了吗",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "哟，好久不见",
+                "character": "浦原喜助",
+                "source": "死神"
+            },
+            {
+                "text": "准备好了吗？",
+                "character": "艾伦",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "让我看看你的实力",
+                "character": "比克",
+                "source": "龙珠"
+            },
+            {
+                "text": "命运的齿轮开始转动了",
+                "character": "旁白",
+                "source": "JOJO"
+            },
+            {
+                "text": "你就是我的Master吗",
+                "character": "Saber",
+                "source": "Fate"
+            },
+            {
+                "text": "前方高能",
+                "character": "旁白",
+                "source": "三体"
+            },
+            {
+                "text": "全员集合！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "来吧，这就是我的忍道",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "让开，我要装逼了",
+                "character": "坂田银时",
+                "source": "银魂"
+            },
+            {
+                "text": "世界那么大，我想去看看",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "开始了开始了",
+                "character": "影山茂夫",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "吾之名为",
+                "character": "漆黑烈焰使",
+                "source": "中二病也要谈恋爱"
+            },
+            {
+                "text": "准备接招吧",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "我来了，有什么不满吗",
+                "character": "立花泷",
+                "source": "你的名字"
+            },
+            {
+                "text": "等待多时了",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "赌上我的名号",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "接好了",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "上吧，我的替身！",
+                "character": "空条承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "打起精神来",
+                "character": "阿银",
+                "source": "银魂"
+            },
+            {
+                "text": "嘿嘿，有好戏看了",
+                "character": "西索",
+                "source": "猎人"
+            },
+            {
+                "text": "让我见识一下吧",
+                "character": "奇诺",
+                "source": "奇诺之旅"
+            },
+            {
+                "text": "开始了哦",
+                "character": "蕾姆",
+                "source": "Re:Zero"
+            },
+            {
+                "text": "命运的相逢",
+                "character": "卫宫士郎",
+                "source": "Fate"
+            },
+            {
+                "text": "螺旋丸！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "影分身之术！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "写轮眼",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "千鸟",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "天照",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "月读",
+                "character": "鼬",
+                "source": "火影忍者"
+            },
+            {
+                "text": "须佐能乎",
+                "character": "鼬",
+                "source": "火影忍者"
+            },
+            {
+                "text": "万象天引",
+                "character": "佩恩",
+                "source": "火影忍者"
+            },
+            {
+                "text": "神罗天征",
+                "character": "佩恩",
+                "source": "火影忍者"
+            },
+            {
+                "text": "八门遁甲",
+                "character": "凯老师",
+                "source": "火影忍者"
+            },
+            {
+                "text": "橡胶橡胶！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "三千世界",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "恶魔风脚",
+                "character": "山治",
+                "source": "海贼王"
+            },
+            {
+                "text": "霸王色霸气",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "见闻色",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "龟派气功",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "瞬间移动",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "魔贯光杀炮",
+                "character": "比克",
+                "source": "龙珠"
+            },
+            {
+                "text": "最终闪光",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "界王拳",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "元气弹",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "月牙天冲",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "卍解",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "散落吧千本樱",
+                "character": "白哉",
+                "source": "死神"
+            },
+            {
+                "text": "镜花水月",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "日之呼吸",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "雷之呼吸",
+                "character": "我妻善逸",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "花之呼吸",
+                "character": "胡蝶忍",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "水之呼吸",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "赫刀",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "领域展开",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "无量空处",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "黑闪",
+                "character": "虎杖悠仁",
+                "source": "咒术回战"
+            },
+            {
+                "text": "伏魔御厨子",
+                "character": "宿傩",
+                "source": "咒术回战"
+            },
+            {
+                "text": "捌式",
+                "character": "伏黑惠",
+                "source": "咒术回战"
+            },
+            {
+                "text": "欧拉欧拉欧拉！",
+                "character": "空条承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "木大木大木大！",
+                "character": "DIO",
+                "source": "JOJO"
+            },
+            {
+                "text": "时间停止",
+                "character": "DIO",
+                "source": "JOJO"
+            },
+            {
+                "text": "黄金体验",
+                "character": "乔鲁诺",
+                "source": "JOJO"
+            },
+            {
+                "text": "星尘斗士",
+                "character": "空条承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "认真殴打",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "连续普通拳",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "念能力",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "猜猜看~",
+                "character": "西索",
+                "source": "猎人"
+            },
+            {
+                "text": "圆",
+                "character": "尼特罗",
+                "source": "猎人"
+            },
+            {
+                "text": "百式观音",
+                "character": "尼特罗",
+                "source": "猎人"
+            },
+            {
+                "text": "誓约与制约",
+                "character": "库洛洛",
+                "source": "猎人"
+            },
+            {
+                "text": "AT力场",
+                "character": "初号机",
+                "source": "EVA"
+            },
+            {
+                "text": "暴走",
+                "character": "初号机",
+                "source": "EVA"
+            },
+            {
+                "text": "人类补完计划",
+                "character": "碇源堂",
+                "source": "EVA"
+            },
+            {
+                "text": "天元突破",
+                "character": "西蒙",
+                "source": "天元突破"
+            },
+            {
+                "text": "钻头突破天际",
+                "character": "西蒙",
+                "source": "天元突破"
+            },
+            {
+                "text": "螺旋力",
+                "character": "西蒙",
+                "source": "天元突破"
+            },
+            {
+                "text": "Geass",
+                "character": "鲁路修",
+                "source": "Code Geass"
+            },
+            {
+                "text": "绝对命令",
+                "character": "鲁路修",
+                "source": "Code Geass"
+            },
+            {
+                "text": "风之剑舞",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "星爆气流斩",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "无限剑制",
+                "character": "卫宫士郎",
+                "source": "Fate"
+            },
+            {
+                "text": "Excalibur",
+                "character": "Saber",
+                "source": "Fate"
+            },
+            {
+                "text": "天之锁",
+                "character": "吉尔伽美什",
+                "source": "Fate"
+            },
+            {
+                "text": "王之财宝",
+                "character": "吉尔伽美什",
+                "source": "Fate"
+            },
+            {
+                "text": "固有结界",
+                "character": "卫宫士郎",
+                "source": "Fate"
+            },
+            {
+                "text": "变身",
+                "character": "孙悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "超赛变身",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "自在极意功",
+                "character": "悟空",
+                "source": "龙珠"
+            }
+        ],
+        "thinking": [
+            {
+                "text": "忍者的才能在于思考",
+                "character": "鹿丸",
+                "source": "火影忍者"
+            },
+            {
+                "text": "让我想想...",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "答案只有一个",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "原来如此",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我看穿你了",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "冷静，想想看",
+                "character": "山治",
+                "source": "海贼王"
+            },
+            {
+                "text": "分析一下形势",
+                "character": "罗宾",
+                "source": "海贼王"
+            },
+            {
+                "text": "等等，有问题",
+                "character": "乌索普",
+                "source": "海贼王"
+            },
+            {
+                "text": "让我感受一下气息",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "嗯？有意思",
+                "character": "维斯",
+                "source": "龙珠"
+            },
+            {
+                "text": "给我仔细想想！",
+                "character": "浦原",
+                "source": "死神"
+            },
+            {
+                "text": "我早已看穿一切",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "这个感觉是...",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "整理一下情报",
+                "character": "韩吉",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "需要重新计算",
+                "character": "阿尔敏",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "集中精神",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "呼吸，平稳下来",
+                "character": "义勇",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "术式的构成是...",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "有点棘手呢",
+                "character": "伏黑",
+                "source": "咒术回战"
+            },
+            {
+                "text": "让我思考一下",
+                "character": "酷拉皮卡",
+                "source": "猎人"
+            },
+            {
+                "text": "嘻嘻...有意思",
+                "character": "西索",
+                "source": "猎人"
+            },
+            {
+                "text": "分析对手的能力",
+                "character": "库洛洛",
+                "source": "猎人"
+            },
+            {
+                "text": "嘛，让我想想",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "等等，让我捋一捋",
+                "character": "新八",
+                "source": "银魂"
+            },
+            {
+                "text": "等价交换的法则是...",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "这背后的原理是什么",
+                "character": "阿尔冯斯",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "嗯...那是什么来着",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "呀咧呀咧daze",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "这是替身能力的规律",
+                "character": "乔瑟夫",
+                "source": "JOJO"
+            },
+            {
+                "text": "妖气的来源是...",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "等一下，有问题",
+                "character": "戈薇",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "分析对手的个性",
+                "character": "绿谷",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "用哪个策略好呢",
+                "character": "饭田",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "这个妖怪是...",
+                "character": "夏目",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "我来推理一下",
+                "character": "夏尔",
+                "source": "黑执事"
+            },
+            {
+                "text": "攻略的关键是...",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "赫子的类型是...",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "计算逃跑路线",
+                "character": "诺曼",
+                "source": "约定的梦幻岛"
+            },
+            {
+                "text": "概率在下降",
+                "character": "雷",
+                "source": "约定的梦幻岛"
+            },
+            {
+                "text": "任务需要调整",
+                "character": "黄昏",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "这个食材的弱点是...",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "毒的成分是...",
+                "character": "可可",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "他的习惯动作是...",
+                "character": "影山",
+                "source": "排球少年"
+            },
+            {
+                "text": "师傅，该怎么办",
+                "character": "龙套",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "这种情况下要...",
+                "character": "灵幻",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "代价是什么...",
+                "character": "晓美焰",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "好像在哪里见过",
+                "character": "立花泷",
+                "source": "你的名字"
+            },
+            {
+                "text": "该怎么做呢",
+                "character": "柯南",
+                "source": "名侦探柯南"
+            },
+            {
+                "text": "让我想想",
+                "character": "L",
+                "source": "死亡笔记"
+            },
+            {
+                "text": "等等，这不对劲",
+                "character": "柯南",
+                "source": "名侦探柯南"
+            },
+            {
+                "text": "原来如此，是这么回事啊",
+                "character": "夜神月",
+                "source": "死亡笔记"
+            },
+            {
+                "text": "嗯……有意思",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "我看到了",
+                "character": "白金之星",
+                "source": "JOJO"
+            },
+            {
+                "text": "真相只有一个",
+                "character": "柯南",
+                "source": "名侦探柯南"
+            },
+            {
+                "text": "分析完毕",
+                "character": "希特勒",
+                "source": "幼女战记"
+            },
+            {
+                "text": "这下麻烦了",
+                "character": "卫宫士郎",
+                "source": "Fate"
+            },
+            {
+                "text": "冷静，让我推理",
+                "character": "折木奉太郎",
+                "source": "冰菓"
+            },
+            {
+                "text": "数据收集完毕",
+                "character": "希兹尔",
+                "source": "幼女战记"
+            },
+            {
+                "text": "应该有破绽",
+                "character": "杀老师",
+                "source": "暗杀教室"
+            },
+            {
+                "text": "果然如我所料",
+                "character": "赤司征十郎",
+                "source": "黑子的篮球"
+            },
+            {
+                "text": "嗯，计算中",
+                "character": "初号机",
+                "source": "EVA"
+            },
+            {
+                "text": "让我确认一下",
+                "character": "牧濑红莉栖",
+                "source": "命运石之门"
+            },
+            {
+                "text": "这个反应……是那个吗",
+                "character": "御坂美琴",
+                "source": "某科学的超电磁炮"
+            },
+            {
+                "text": "唔……有点棘手",
+                "character": "凯尔希",
+                "source": "明日方舟"
+            },
+            {
+                "text": "我在思考",
+                "character": "梅林",
+                "source": "Fate"
+            },
+            {
+                "text": "答案快出来了",
+                "character": "灰原哀",
+                "source": "名侦探柯南"
+            },
+            {
+                "text": "有意思的数据",
+                "character": "牧濑红莉栖",
+                "source": "命运石之门"
+            }
+        ],
+        "battle": [
+            {
+                "text": "螺旋丸！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "千鸟！",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "写轮眼！",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "仙人模式！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "须佐能乎！",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "万象天引！",
+                "character": "佩恩",
+                "source": "火影忍者"
+            },
+            {
+                "text": "八门遁甲！",
+                "character": "凯",
+                "source": "火影忍者"
+            },
+            {
+                "text": "砂瀑送葬！",
+                "character": "我爱罗",
+                "source": "火影忍者"
+            },
+            {
+                "text": "橡胶橡胶火箭炮！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "三刀流·鬼斩！",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "恶魔风脚！",
+                "character": "山治",
+                "source": "海贼王"
+            },
+            {
+                "text": "火拳！",
+                "character": "艾斯",
+                "source": "海贼王"
+            },
+            {
+                "text": "大喷火！",
+                "character": "赤犬",
+                "source": "海贼王"
+            },
+            {
+                "text": "霸气！",
+                "character": "红发",
+                "source": "海贼王"
+            },
+            {
+                "text": "龟派气功！",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "超级赛亚人！",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "终极闪光！",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "魔贯光杀炮！",
+                "character": "比克",
+                "source": "龙珠"
+            },
+            {
+                "text": "你完了！",
+                "character": "弗利萨",
+                "source": "龙珠"
+            },
+            {
+                "text": "月牙天冲！",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "卍解！",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "散落吧千本樱！",
+                "character": "白哉",
+                "source": "死神"
+            },
+            {
+                "text": "破道之六十三！",
+                "character": "露琪亚",
+                "source": "死神"
+            },
+            {
+                "text": "给我咬碎他！",
+                "character": "更木剑八",
+                "source": "死神"
+            },
+            {
+                "text": "驱逐所有巨人！",
+                "character": "艾伦",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "战斗到最后一刻",
+                "character": "三笠",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "削光它们！",
+                "character": "利威尔",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "水之呼吸！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "雷之呼吸·壹之型！",
+                "character": "善逸",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "兽之呼吸！",
+                "character": "伊之助",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "日之呼吸！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "黑闪！",
+                "character": "虎杖",
+                "source": "咒术回战"
+            },
+            {
+                "text": "领域展开·无量空处！",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "脱兔！",
+                "character": "伏黑",
+                "source": "咒术回战"
+            },
+            {
+                "text": "迳庭拳！",
+                "character": "钉崎",
+                "source": "咒术回战"
+            },
+            {
+                "text": "解！",
+                "character": "两面宿傩",
+                "source": "咒术回战"
+            },
+            {
+                "text": "猜拳！",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "电光石火！",
+                "character": "奇犽",
+                "source": "猎人"
+            },
+            {
+                "text": "中指链·束缚之链！",
+                "character": "酷拉皮卡",
+                "source": "猎人"
+            },
+            {
+                "text": "伸缩自在的爱！",
+                "character": "西索",
+                "source": "猎人"
+            },
+            {
+                "text": "偷盗之手！",
+                "character": "库洛洛",
+                "source": "猎人"
+            },
+            {
+                "text": "炼成开始！",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "合成！",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "烧灼之焰！",
+                "character": "马斯坦",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "认真系列·认真殴打！",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "灭虫炮！",
+                "character": "杰诺斯",
+                "source": "一拳超人"
+            },
+            {
+                "text": "念动炮！",
+                "character": "龙卷",
+                "source": "一拳超人"
+            },
+            {
+                "text": "白金之星！",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "木大木大木大！",
+                "character": "DIO",
+                "source": "JOJO"
+            },
+            {
+                "text": "欧拉欧拉欧拉！",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "时间停止了！",
+                "character": "DIO",
+                "source": "JOJO"
+            },
+            {
+                "text": "风之伤！",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "爆流破！",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "苍龙破！",
+                "character": "杀生丸",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "洞爷湖·登势剑！",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "Detroit Smash！",
+                "character": "绿谷",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "Howitzer Impact！",
+                "character": "爆豪",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "怪人快攻！",
+                "character": "日向",
+                "source": "排球少年"
+            },
+            {
+                "text": "王者的托球！",
+                "character": "影山",
+                "source": "排球少年"
+            },
+            {
+                "text": "100%！！！",
+                "character": "龙套",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "星爆气流斩！",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "蜈蚣！",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "我来战斗",
+                "character": "晓美焰",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "时间回溯",
+                "character": "晓美焰",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "叉·冲击！",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "毒之军团！",
+                "character": "可可",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "进军料理！",
+                "character": "松竹梅",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "这就是我的全部力量！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "让你看看什么叫做地狱",
+                "character": "宇智波斑",
+                "source": "火影忍者"
+            },
+            {
+                "text": "死吧！",
+                "character": "弗利萨",
+                "source": "龙珠"
+            },
+            {
+                "text": "一击必杀",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "认真系列·认真殴打",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "我要把你打到飞起来",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "这拳够劲吗",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "橡胶橡胶·火箭炮！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "卍解",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "月牙天冲！",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "雷之呼吸·壹之型",
+                "character": "我妻善逸",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "日之呼吸！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "领域展开·无量空处",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "黑闪！",
+                "character": "虎杖悠仁",
+                "source": "咒术回战"
+            },
+            {
+                "text": "木大木大木大！",
+                "character": "空条承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "欧拉欧拉欧拉！",
+                "character": "空条承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "吃我这招！",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "最终闪光！",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "龟派气功！",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "你还差得远呢",
+                "character": "越前龙马",
+                "source": "网球王子"
+            },
+            {
+                "text": "上了！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "这就是我的道路",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "三千世界！",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "虚式·茈",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "领域展开·伏魔御厨子",
+                "character": "宿傩",
+                "source": "咒术回战"
+            },
+            {
+                "text": "来吧，全力以赴",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "接招吧，这是最后的了",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "让你久等了，我的回合",
+                "character": "游戏",
+                "source": "游戏王"
+            },
+            {
+                "text": "抽卡！",
+                "character": "游戏",
+                "source": "游戏王"
+            }
+        ],
+        "victory": [
+            {
+                "text": "赢了呢",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "这就是青春啊！",
+                "character": "凯",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我说到做到了",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "太天真了",
+                "character": "鼬",
+                "source": "火影忍者"
+            },
+            {
+                "text": "赢了！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "我赌赢了",
+                "character": "红发",
+                "source": "海贼王"
+            },
+            {
+                "text": "不过如此",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "还差得远呢",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "不错嘛",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "你还差得远",
+                "character": "白哉",
+                "source": "死神"
+            },
+            {
+                "text": "结束了",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "这就是自由",
+                "character": "艾伦",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "任务完成",
+                "character": "利威尔",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "做到了！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "我保护了大家",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "轻松搞定",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "赢了呢",
+                "character": "虎杖",
+                "source": "咒术回战"
+            },
+            {
+                "text": "我赢了！",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "哼，无聊",
+                "character": "奇犽",
+                "source": "猎人"
+            },
+            {
+                "text": "嘛，就是这样",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "啊？结束了？",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "一拳搞定",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "这就是炼金术",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "这就是我的替身",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "哼，不过如此",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "结束了",
+                "character": "杀生丸",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "因为我来了！",
+                "character": "欧尔麦特",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "太好了",
+                "character": "夏目",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "任务完成",
+                "character": "塞巴斯蒂安",
+                "source": "黑执事"
+            },
+            {
+                "text": "通关了",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "我活下来了",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "成功逃脱！",
+                "character": "艾玛",
+                "source": "约定的梦幻岛"
+            },
+            {
+                "text": "完美",
+                "character": "黄昏",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "好吃！",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "得分了！！",
+                "character": "日向",
+                "source": "排球少年"
+            },
+            {
+                "text": "搞定了",
+                "character": "灵幻",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "太好了！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "这就是青春啊！",
+                "character": "凯老师",
+                "source": "火影忍者"
+            },
+            {
+                "text": "赢了呢",
+                "character": "卫宫士郎",
+                "source": "Fate"
+            },
+            {
+                "text": "小菜一碟",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "赢了也不代表什么",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "呀咧呀咧",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "没有我赢不了的对手",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "这就是正义的胜利",
+                "character": "欧尔麦特",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "收工收工",
+                "character": "坂田银时",
+                "source": "银魂"
+            },
+            {
+                "text": "还算及格吧",
+                "character": "越前龙马",
+                "source": "网球王子"
+            },
+            {
+                "text": "成功了！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "over",
+                "character": "江户川柯南",
+                "source": "名侦探柯南"
+            },
+            {
+                "text": "完美的胜利",
+                "character": "赤司征十郎",
+                "source": "黑子的篮球"
+            },
+            {
+                "text": "这就是差距",
+                "character": "宇智波佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "呼，结束了",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "任务完成",
+                "character": "安室透",
+                "source": "名侦探柯南"
+            }
+        ],
+        "defeat": [
+            {
+                "text": "可恶...下次一定",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "是我输了",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "失算了",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我还不够强",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "对不起...",
+                "character": "索隆",
+                "source": "海贼王"
+            },
+            {
+                "text": "不可能...",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "下次一定赢",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "我太弱了",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "这就是败北吗",
+                "character": "更木剑八",
+                "source": "死神"
+            },
+            {
+                "text": "怎么可能...",
+                "character": "艾伦",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "是我太天真了",
+                "character": "阿尔敏",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "我还差得远",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "啊啊啊我要死了",
+                "character": "善逸",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "这就是...极限吗",
+                "character": "虎杖",
+                "source": "咒术回战"
+            },
+            {
+                "text": "失败了",
+                "character": "伏黑",
+                "source": "咒术回战"
+            },
+            {
+                "text": "我不够强...",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "这就是代价",
+                "character": "酷拉皮卡",
+                "source": "猎人"
+            },
+            {
+                "text": "完了完了完了",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "嗯？我输了？",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "等价交换失败了",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "这就是命运吗",
+                "character": "乔瑟夫",
+                "source": "JOJO"
+            },
+            {
+                "text": "可恶！",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "我还太弱了",
+                "character": "绿谷",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "对不起...",
+                "character": "夏目",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "是我疏忽了",
+                "character": "夏尔",
+                "source": "黑执事"
+            },
+            {
+                "text": "Game Over",
+                "character": "桐人",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "我保护不了任何人",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "任务失败",
+                "character": "黄昏",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "这食材太强了",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "可恶，失误了",
+                "character": "日向",
+                "source": "排球少年"
+            },
+            {
+                "text": "我做不到...",
+                "character": "龙套",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "还差得远呢",
+                "character": "越前龙马",
+                "source": "网球王子"
+            },
+            {
+                "text": "怎么可能……",
+                "character": "弗利萨",
+                "source": "龙珠"
+            },
+            {
+                "text": "是我输了",
+                "character": "佩恩",
+                "source": "火影忍者"
+            },
+            {
+                "text": "不甘心啊",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "这就是败北吗",
+                "character": "蓝染",
+                "source": "死神"
+            },
+            {
+                "text": "下次一定赢你",
+                "character": "越前龙马",
+                "source": "网球王子"
+            },
+            {
+                "text": "我还不够强",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "承认失败也是一种勇气",
+                "character": "白胡子",
+                "source": "海贼王"
+            },
+            {
+                "text": "输了就是输了",
+                "character": "凯老师",
+                "source": "火影忍者"
+            },
+            {
+                "text": "我还差得远",
+                "character": "影山茂夫",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "唔……太大意了",
+                "character": "杀老师",
+                "source": "暗杀教室"
+            },
+            {
+                "text": "这就是实力的差距吗",
+                "character": "格斯",
+                "source": "剑风传奇"
+            },
+            {
+                "text": "下一个对手在哪里",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "还会再见的",
+                "character": "多弗朗明哥",
+                "source": "海贼王"
+            },
+            {
+                "text": "这次算你赢了",
+                "character": "西索",
+                "source": "猎人"
+            },
+            {
+                "text": "结束了吗",
+                "character": "卫宫切嗣",
+                "source": "Fate"
+            },
+            {
+                "text": "我还没倒下",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "总有一天会超越你",
+                "character": "佐助",
+                "source": "火影忍者"
+            }
+        ],
+        "eating": [
+            {
+                "text": "肚子饿了...",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "等一下，先吃饭",
+                "character": "山治",
+                "source": "海贼王"
+            },
+            {
+                "text": "肉！！！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "山治，饭呢",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "好饿啊",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "吃饭吃饭",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "再等五分钟",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "好困啊...",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "草莓牛奶！",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "好香啊...",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "吃饭了！",
+                "character": "伊之助",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "美食是最好的治愈",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "这个食材...",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "还没好呢",
+                "character": "松竹梅",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "有点饿了",
+                "character": "虎杖",
+                "source": "咒术回战"
+            },
+            {
+                "text": "等一下嘛",
+                "character": "钉崎",
+                "source": "咒术回战"
+            },
+            {
+                "text": "超市特卖要开始了",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "猫咪老师，别吃了",
+                "character": "夏目",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "再来一杯！",
+                "character": "猫咪老师",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "安妮亚饿了",
+                "character": "安妮亚",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "花生！",
+                "character": "安妮亚",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "还没好吗",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "饭还没好吗",
+                "character": "爆豪",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "好饿，想吃肉",
+                "character": "日向",
+                "source": "排球少年"
+            },
+            {
+                "text": "师父，什么时候吃饭",
+                "character": "龙套",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "不要吃太多啊",
+                "character": "千寻",
+                "source": "千与千寻"
+            },
+            {
+                "text": "要来一杯茶吗",
+                "character": "乔瑟夫",
+                "source": "JOJO"
+            },
+            {
+                "text": "先休息一下",
+                "character": "亚丝娜",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "好饿...",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "开动了！",
+                "character": "千寻",
+                "source": "千与千寻"
+            },
+            {
+                "text": "好吃到爆！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "再来一碗！",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "肉！肉！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "这个味道……不错",
+                "character": "立花泷",
+                "source": "你的名字"
+            },
+            {
+                "text": "吃饭是最重要的事",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "多谢款待",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "我饿了",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "吃货的直觉不会错",
+                "character": "神乐",
+                "source": "银魂"
+            },
+            {
+                "text": "这个……有点好吃",
+                "character": "蕾姆",
+                "source": "Re:Zero"
+            },
+            {
+                "text": "做料理是爱的表现",
+                "character": "刘昴星",
+                "source": "中华小当家"
+            },
+            {
+                "text": "妈妈的味道",
+                "character": "龙套",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "该补充能量了",
+                "character": "利威尔",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "美食是最好的治愈",
+                "character": "夏目贵志",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "这份便当……幸福",
+                "character": "阿尼亚",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "料理是爱与和平",
+                "character": "小当家",
+                "source": "中华小当家"
+            },
+            {
+                "text": "我能吃十碗",
+                "character": "卡卡罗特",
+                "source": "龙珠"
+            },
+            {
+                "text": "肚子在叫了",
+                "character": "影山茂夫",
+                "source": "灵能百分百"
+            }
+        ],
+        "casual": [
+            {
+                "text": "哼，无聊",
+                "character": "佐助",
+                "source": "火影忍者"
+            },
+            {
+                "text": "这就是忍道",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "迟到的人等同于废物",
+                "character": "卡卡西",
+                "source": "火影忍者"
+            },
+            {
+                "text": "有话直说",
+                "character": "鸣人",
+                "source": "火影忍者"
+            },
+            {
+                "text": "出发吧！",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "有什么关系嘛",
+                "character": "路飞",
+                "source": "海贼王"
+            },
+            {
+                "text": "航海士说了算",
+                "character": "娜美",
+                "source": "海贼王"
+            },
+            {
+                "text": "切，不值一提",
+                "character": "贝吉塔",
+                "source": "龙珠"
+            },
+            {
+                "text": "有意思",
+                "character": "悟空",
+                "source": "龙珠"
+            },
+            {
+                "text": "我来保护你",
+                "character": "一护",
+                "source": "死神"
+            },
+            {
+                "text": "真是的",
+                "character": "露琪亚",
+                "source": "死神"
+            },
+            {
+                "text": "献出心脏",
+                "character": "三笠",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "我们是同伴",
+                "character": "阿尔敏",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "加油！",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "请多多关照",
+                "character": "炭治郎",
+                "source": "鬼灭之刃"
+            },
+            {
+                "text": "嘛，也不是不行",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "无所谓",
+                "character": "伏黑",
+                "source": "咒术回战"
+            },
+            {
+                "text": "约定好了",
+                "character": "小杰",
+                "source": "猎人"
+            },
+            {
+                "text": "无所谓",
+                "character": "奇犽",
+                "source": "猎人"
+            },
+            {
+                "text": "嘛，就这样吧",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "不是挺好的嘛",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "啊？",
+                "character": "神乐",
+                "source": "银魂"
+            },
+            {
+                "text": "银桑我啊",
+                "character": "银时",
+                "source": "银魂"
+            },
+            {
+                "text": "一即是全，全即是一",
+                "character": "爱德华",
+                "source": "钢之炼金术师"
+            },
+            {
+                "text": "好麻烦啊",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "嗯",
+                "character": "琦玉",
+                "source": "一拳超人"
+            },
+            {
+                "text": "呀咧呀咧",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "Good grief",
+                "character": "承太郎",
+                "source": "JOJO"
+            },
+            {
+                "text": "啰嗦！",
+                "character": "犬夜叉",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "半妖",
+                "character": "杀生丸",
+                "source": "犬夜叉"
+            },
+            {
+                "text": "Plus Ultra！",
+                "character": "欧尔麦特",
+                "source": "我的英雄学院"
+            },
+            {
+                "text": "我想保护他们",
+                "character": "夏目",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "凡多姆海威家不需要废物",
+                "character": "夏尔",
+                "source": "黑执事"
+            },
+            {
+                "text": "这就是我们的日常",
+                "character": "亚丝娜",
+                "source": "刀剑神域"
+            },
+            {
+                "text": "世界是错误的",
+                "character": "金木研",
+                "source": "东京喰种"
+            },
+            {
+                "text": "明天会更好",
+                "character": "艾玛",
+                "source": "约定的梦幻岛"
+            },
+            {
+                "text": "哇酷哇酷",
+                "character": "安妮亚",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "优雅",
+                "character": "约尔",
+                "source": "间谍过家家"
+            },
+            {
+                "text": "好吃就是正义",
+                "character": "特瑞科",
+                "source": "美食的俘虏"
+            },
+            {
+                "text": "排球真有趣！",
+                "character": "日向",
+                "source": "排球少年"
+            },
+            {
+                "text": "这种事找师傅",
+                "character": "龙套",
+                "source": "灵能百分百"
+            },
+            {
+                "text": "不管前方的路有多苦",
+                "character": "千寻",
+                "source": "千与千寻"
+            },
+            {
+                "text": "我们一起活下去",
+                "character": "千寻",
+                "source": "千与千寻"
+            },
+            {
+                "text": "不管你在哪",
+                "character": "立花泷",
+                "source": "你的名字"
+            },
+            {
+                "text": "天气什么的无所谓",
+                "character": "天野阳菜",
+                "source": "天气之子"
+            },
+            {
+                "text": "人活着就是为了樱岛麻衣",
+                "character": "梓川咲太",
+                "source": "青春猪头少年"
+            },
+            {
+                "text": "不要停下来啊",
+                "character": "夏亚",
+                "source": "高达"
+            },
+            {
+                "text": "好麻烦啊",
+                "character": "折木奉太郎",
+                "source": "冰菓"
+            },
+            {
+                "text": "我只是路过的假面骑士",
+                "character": "门矢士",
+                "source": "假面骑士"
+            },
+            {
+                "text": "我对普通的人类没有兴趣",
+                "character": "凉宫春日",
+                "source": "凉宫春日的忧郁"
+            },
+            {
+                "text": "这也在你的计算之中吗",
+                "character": "夜神月",
+                "source": "死亡笔记"
+            },
+            {
+                "text": "不愧是我",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "真拿你没办法",
+                "character": "坂田银时",
+                "source": "银魂"
+            },
+            {
+                "text": "我的生涯一片无悔",
+                "character": "东方仗助",
+                "source": "JOJO"
+            },
+            {
+                "text": "吉良吉影想过平静的生活",
+                "character": "吉良吉影",
+                "source": "JOJO"
+            },
+            {
+                "text": "只要不停下脚步，道路就会延伸",
+                "character": "艾伦",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "没事的，有我在",
+                "character": "夏目贵志",
+                "source": "夏目友人帐"
+            },
+            {
+                "text": "今天的风儿甚是喧嚣",
+                "character": "比企谷八幡",
+                "source": "我的青春恋爱物语果然有问题"
+            },
+            {
+                "text": "现充都爆炸吧",
+                "character": "比企谷八幡",
+                "source": "我的青春恋爱物语果然有问题"
+            },
+            {
+                "text": "这就是所谓的日常吗",
+                "character": "折木奉太郎",
+                "source": "冰菓"
+            },
+            {
+                "text": "我只是想看海而已",
+                "character": "森岛帆高",
+                "source": "天气之子"
+            },
+            {
+                "text": "能哭的地方只有厕所和爸爸的怀里",
+                "character": "宫水三叶",
+                "source": "你的名字"
+            },
+            {
+                "text": "和我签订契约成为魔法少女吧",
+                "character": "丘比",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "已经没什么好怕的了",
+                "character": "鹿目圆",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "我只是个路过的魔法师",
+                "character": "鹿目圆",
+                "source": "魔法少女小圆"
+            },
+            {
+                "text": "一天不装逼我就浑身难受",
+                "character": "五条悟",
+                "source": "咒术回战"
+            },
+            {
+                "text": "甚好",
+                "character": "卫宫切嗣",
+                "source": "Fate"
+            },
+            {
+                "text": "正义由我来执行",
+                "character": "卫宫切嗣",
+                "source": "Fate"
+            },
+            {
+                "text": "不要小看人类啊",
+                "character": "利威尔",
+                "source": "进击的巨人"
+            },
+            {
+                "text": "我拒绝",
+                "character": "吉良吉影",
+                "source": "JOJO"
+            },
+            {
+                "text": "才不是因为喜欢呢",
+                "character": "小鸟游六花",
+                "source": "中二病也要谈恋爱"
+            }
+        ]
+    },
+    "mood_expressions": {
+        "greeting": [
+            "来了",
+            "上吧",
+            "冲",
+            "开始",
+            "上",
+            "上场上场",
+            "来了来了",
+            "冲冲冲",
+            "准备好了",
+            "出发出发",
+            "上号了",
+            "来了老弟",
+            "上线",
+            "开工",
+            "冲啊",
+            "来了来了",
+            "上线上线",
+            "开搞",
+            "来了老弟",
+            "起飞",
+            "就位",
+            "报到",
+            "各位好",
+            "终于轮到我了"
+        ],
+        "thinking": [
+            "想想",
+            "等等",
+            "嗯...",
+            "有想法了",
+            "再想想",
+            "让我想想",
+            "思考中",
+            "灵感来了",
+            "有思路了",
+            "等下",
+            "分析一下",
+            "捋一捋",
+            "等等等等",
+            "灵光一闪",
+            "快想到了",
+            "马上就好",
+            "脑瓜子转起来了",
+            "让我琢磨琢磨",
+            "灵光一闪",
+            "快想到了",
+            "差一点",
+            "别催",
+            "有头绪了",
+            "嗯嗯嗯",
+            "这个嘛",
+            "让我推理一下",
+            "卡住了"
+        ],
+        "battle": [
+            "冲啊",
+            "上！",
+            "干",
+            "开干",
+            "干就完了",
+            "火力全开",
+            "燃烧起来了",
+            "全力以赴",
+            "爆发",
+            "大招来了",
+            "认真了",
+            "要上了",
+            "冲冲冲",
+            "开大了",
+            "来真的了",
+            "放大招",
+            "全力出击",
+            "战斗姿态",
+            "暴走模式",
+            "认真模式启动",
+            "受死吧",
+            "看招",
+            "吃我一击",
+            "来啊",
+            "硬碰硬",
+            "全力输出",
+            "爆裂吧",
+            "粉碎",
+            "贯穿",
+            "咆哮吧"
+        ],
+        "victory": [
+            "搞定",
+            "拿下了",
+            "完美",
+            "赢了",
+            "轻松",
+            "小意思",
+            "不过如此",
+            "就这？",
+            "收工",
+            "搞定搞定",
+            "完成",
+            "稳了",
+            "拿捏",
+            "轻松搞定",
+            "手到擒来",
+            "不在话下",
+            "完美",
+            "轻松拿捏",
+            "不愧是我",
+            "就这？",
+            "意料之中",
+            "毫无悬念",
+            "碾压",
+            "轻轻松松",
+            "小意思",
+            "手到擒来"
+        ],
+        "defeat": [
+            "翻车了",
+            "寄了",
+            "gg",
+            "失误了",
+            "栽了",
+            "这波亏了",
+            "大意了",
+            "没闪",
+            "翻车",
+            "寄",
+            "裂开",
+            "炸了",
+            "绷不住了",
+            "翻车了",
+            "大意了",
+            "没闪",
+            "这次认栽",
+            "翻盘失败",
+            "还差亿点",
+            "对手太强",
+            "下次一定",
+            "不甘心",
+            "马有失蹄"
+        ],
+        "eating": [
+            "等一下",
+            "稍等",
+            "加载中",
+            "再等等",
+            "马上好",
+            "快了快了",
+            "别急",
+            "稍等片刻",
+            "泡杯茶",
+            "摸鱼中",
+            "划水中",
+            "等待ing",
+            "先歇会",
+            "开饭了",
+            "好香",
+            "来一口",
+            "真好吃",
+            "饿死了",
+            "加个蛋",
+            "夜宵时间",
+            "补充能量",
+            "干饭",
+            "有好吃的吗"
+        ],
+        "casual": [
+            "嘛",
+            "嗯",
+            "哦",
+            "行",
+            "好",
+            "可以",
+            "还行吧",
+            "凑合",
+            "一般般",
+            "无所谓",
+            "随便吧",
+            "都行",
+            "看心情",
+            "随缘",
+            "躺平",
+            "摸鱼",
+            "划水中",
+            "今天天气不错",
+            "好无聊",
+            "随便吧",
+            "无所谓",
+            "啊对对对",
+            "你说了算",
+            "随便聊聊"
+        ]
+    },
+    "seal_endings": [
+        "收工",
+        "完毕",
+        "溜了",
+        "撤了",
+        "跑了",
+        "拜拜",
+        "下一位",
+        "散会",
+        "交活了",
+        "交卷了",
+        "下班了",
+        "告辞",
+        "臣告退",
+        "贫道告辞",
+        "老衲告辞",
+        "后会有期",
+        "青山不改",
+        "江湖再见",
+        "就此别过",
+        "山高水长",
+        "我先撤了",
+        "溜了溜了",
+        "跑了跑了",
+        "撤了撤了",
+        "再见来不及挥手",
+        "不用送了",
+        "我走了拜拜",
+        "编不下去了",
+        "词穷了",
+        "我扯远了",
+        "跑题了",
+        "实在编不下去",
+        "没词了",
+        "说不下去了",
+        "好了不扯了",
+        "够了够了",
+        "行了行了",
+        "得了得了",
+        "停停停",
+        "打住",
+        "别说了",
+        "别闹了",
+        "别皮了",
+        "今天就到这",
+        "下次一定",
+        "下次再说",
+        "改天再聊",
+        "回头再说",
+        "有空再聊",
+        "下次见",
+        "回见",
+        "我编不下去了告辞",
+        "词穷了溜了",
+        "扯远了撤了",
+        "跑题了拜拜",
+        "好了我说完了拜拜",
+        "收工，下次见",
+        "搞定了",
+        "善后完毕",
+        "打卡下班",
+        "今日份的正义执行完毕",
+        "今日到此为止",
+        "报告完毕",
+        "退场",
+        "本次服务结束",
+        "感谢惠顾",
+        "还有问题随时叫我",
+        "随时待命",
+        "先溜了",
+        "后会有期",
+        "下次再聊",
+        "告辞",
+        "回归虚无",
+        "暗炎消散",
+        "任务完成",
+        "功成身退",
+        "下次再见",
+        "完结撒花",
+        "就此别过",
+        "拜了个拜",
+        "下线了",
+        "去便利店买竹轮了",
+        "精神股东已撤退",
+        "别太想我",
+        "先去摸鱼了",
+        "躺平结束",
+        "班味散去",
+        "电量耗尽",
+        "今天就到这",
+        "宇宙和平了",
+        "我先撤",
+        "各位告辞",
+        "下班快乐",
+        "今日营业结束",
+        "好的呢",
+        "辛苦了辛苦了"
+    ]
+}
