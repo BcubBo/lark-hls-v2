@@ -33,7 +33,7 @@ from .feishu import (
     UnavailableGuard,
 )
 from .flush import FlushController
-from .linear_mixin import UnifiedControllerMixin
+from .card_flow import UnifiedControllerMixin
 
 _logger = logging.getLogger("lark_hls_v2")
 
@@ -641,7 +641,7 @@ class StreamCardController(UnifiedControllerMixin):
             except Exception:
                 pass
 
-    # ── Completion paths (delegate to linear_mixin) ─────────────────
+    # ── Completion paths (delegate to card_flow) ─────────────────
 
     def _dispatch_completion(self, session: CardSession) -> None:
         """Dispatch card completion (async). Both linear and non-linear use the same path."""
@@ -695,10 +695,10 @@ class StreamCardController(UnifiedControllerMixin):
         except Exception:
             _logger.exception('send_text_fallback failed')
 
-    # ── linear_mixin methods are inherited from UnifiedControllerMixin ──
+    # ── card_flow methods are inherited from UnifiedControllerMixin ──
     # _do_create_linear_card, _schedule_linear_flush, _do_unified_flush,
     # _upgrade_loading_hint_to_thinking, _linear_on_thinking,
-    # _finalize_card, _complete_card_flow are all implemented in linear_mixin.py
+    # _finalize_card, _complete_card_flow are all implemented in card_flow.py
 
     async def _do_cron_deliver(self, chat_id: str, content: str) -> None:
         """Cron 投递 — 发送卡片到指定 chat."""

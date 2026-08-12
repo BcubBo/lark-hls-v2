@@ -9,7 +9,7 @@
 ```
 lark-hls-v2/
 ├── __init__.py              (22L)  — Version extraction, exports register()
-├── linear_mixin.py          (1258L) — CORE: streaming card lifecycle (create→flush→seal)
+├── card_flow.py          (1258L) — CORE: streaming card lifecycle (create→flush→seal)
 ├── controller.py            (780L)  — StreamCardController singleton, session orchestration
 │
 ├── card/                          — Card JSON construction
@@ -209,9 +209,9 @@ agent.stream_delta_callback(text)
           → _finalize_current_reasoning()    [state/linear.py:117]
           → self.answer_text += text
           → self.answer_dirty = True
-        → _schedule_linear_flush(session)    [linear_mixin.py:212]
+        → _schedule_linear_flush(session)    [card_flow.py:212]
           → session.flush.schedule_update()  [flush/controller.py:56]
-            → _do_unified_flush(session)     [linear_mixin.py:255]
+            → _do_unified_flush(session)     [card_flow.py:255]
               → cardkit_stream_element()     [feishu/client.py:399]
 ```
 
@@ -222,12 +222,12 @@ agent.interim_assistant_callback(text)
   → _thinking_wrapper(text)                  [callbacks.py:111]
     → on_thinking_delta(message_id, text)    [hooks.py:158]
       → ctrl.on_thinking(message_id, text)   [controller.py:340]
-        → _upgrade_loading_hint_to_thinking()  [linear_mixin.py:562]
-        → _linear_on_thinking(session, text)   [linear_mixin.py:589]
+        → _upgrade_loading_hint_to_thinking()  [card_flow.py:562]
+        → _linear_on_thinking(session, text)   [card_flow.py:589]
           → split_reasoning_text(text)         [state/text.py:22]
           → state.on_reasoning_delta(reasoning)  [state/linear.py:67]
           → state.on_answer_delta(answer)        [state/linear.py:97]
-          → _schedule_linear_flush(session)      [linear_mixin.py:212]
+          → _schedule_linear_flush(session)      [card_flow.py:212]
 ```
 
 ### 3.3 Tool Progress Chain
@@ -239,7 +239,7 @@ agent.tool_progress_callback(event_type, tool_name, preview)
       → ctrl.on_tool_update(message_id, tool_name, status, detail)  [controller.py:378]
         → session.tool_use.record_start() or record_end()  [state/tooluse.py:232,246]
         → session.unified_state.on_tool_event()  [state/linear.py:103]
-        → _schedule_linear_flush(session)          [linear_mixin.py:212]
+        → _schedule_linear_flush(session)          [card_flow.py:212]
 ```
 
 ### 3.4 Completion Chain
@@ -253,12 +253,12 @@ _run_agent returns → _wrap_run_conversation finally block  [gateway.py]
       → session.state = COMPLETING
       → _dispatch_completion(session)  [controller.py:646]
         → _complete_with_fallback(session)  [controller.py:650]
-          → _complete_card_flow(session)    [linear_mixin.py:1028]
+          → _complete_card_flow(session)    [card_flow.py:1028]
             → session.flush.wait_for_flush()
             → drain dirty data (up to 8 rounds, 20ms yield)
             → session.flush.mark_completed()
             → session._card_ready.wait() (timeout 30s)
-            → _finalize_card(session)       [linear_mixin.py:622]
+            → _finalize_card(session)       [card_flow.py:622]
             → _reset_session_state(session) [controller.py:271]
             → record_card_completed()       [aowen/__init__.py:38]
 ```
@@ -324,7 +324,7 @@ The `lifecycle/` module's `SessionManager`, `InterruptResolver`, and `Continuati
 
 ### 4.3 `_enforce_card_element_limit()` in `card/builder.py`
 
-**Status**: **IMPORTED BUT NEVER CALLED** — imported by `linear_mixin.py` and exported in `__all__`, but the function is never actually invoked. The element limit enforcement is done inline in `_finalize_card()` (linear_mixin.py:788-872) with duplicated logic.
+**Status**: **IMPORTED BUT NEVER CALLED** — imported by `card_flow.py` and exported in `__all__`, but the function is never actually invoked. The element limit enforcement is done inline in `_finalize_card()` (card_flow.py:788-872) with duplicated logic.
 
 **Recommendation**: Either call it from `_finalize_card()` or remove the import.
 
@@ -344,13 +344,13 @@ The `lifecycle/` module's `SessionManager`, `InterruptResolver`, and `Continuati
 
 ## 5. Unused Imports
 
-### 5.1 `linear_mixin.py`
+### 5.1 `card_flow.py`
 - `CARDKIT_SCHEMA_ERROR` — imported but never used (schema errors are checked via `is_schema_error()`)
 - `_enforce_card_element_limit` — imported but never called
 
 ### 5.2 `controller.py`
 - `CARDKIT_SCHEMA_ERROR` — imported but never used
-- `CARDKIT_STREAMING_CLOSED` — imported but never used (used in linear_mixin via mixin inheritance)
+- `CARDKIT_STREAMING_CLOSED` — imported but never used (used in card_flow via mixin inheritance)
 - `FeishuAPIError` — imported but only used in TYPE_CHECKING context
 - `FlushController` — imported but FlushController is created inside CardSession
 - `TERMINAL_PHASES` — imported but `is_terminal_phase` property on session handles this
@@ -585,7 +585,7 @@ Card (schema: "2.0")
 
 ### Unused Imports (confirmed)
 - `controller.py`: 11 unused imports (constants, error checkers, FlushController)
-- `linear_mixin.py`: 2 unused imports
+- `card_flow.py`: 2 unused imports
 - `card/builder.py`: 5 unused imports
 - `card/elements.py`: 3 unused imports
 - `interceptors/__init__.py`: 3 unused imports (datetime/timezone/timedelta)

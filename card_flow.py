@@ -1,6 +1,6 @@
 """Unified panel linear mode — create, flush, and seal a single-card streaming session.
 
-v2 fork: 从原版 linear_mixin.py (1229行) 提取，适配 v2 的模块结构。
+v2 fork: 从原版 card_flow.py (1229行) 提取，适配 v2 的模块结构。
 """
 
 from __future__ import annotations
