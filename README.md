@@ -106,7 +106,7 @@ lark_hls_v2:
   answer_fast_stream_ms: 150   # 回答阶段加速间隔
   # ── Panel 面板 ──
   panel_expanded: true
-  streaming_panel_expanded: true
+  streaming_panel_expanded: false
   auto_collapse_threshold: 10
   panel_border_color: green    # grey/blue/green/orange/red
   panel_header_color: green    # grey/blue/green/orange/red
