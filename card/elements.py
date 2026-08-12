@@ -160,9 +160,6 @@ def _streaming_element(content: str = "", *, element_id: str = STREAMING_ELEMENT
     return {
         "tag": "markdown",
         "content": content,
-        "text_align": "left",
-        "text_size": "normal_v2",
-        "margin": "0px 0px 0px 0px",
         "element_id": element_id,
     }
 
