@@ -1,4 +1,22 @@
-"""CardKit v2.0 — Specialized card types: cron, gateway, clarify."""
+# =================================================================
+# lark-hls-v2 · card/special.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：特殊用途卡片构建器 — cron定时推送、gateway内部消息、clarify澄清交互
+# ② 技术栈：飞书 CardKit 2.0 JSON schema
+# ③ 依赖：card/elements.py（_escape_md, build_card_header）、card/md.py（优化/降级）、card/i18n.py
+# ④ 给谁看：改卡片样式、新增特殊卡片类型的开发者
+# ▍文件从上到下的结构
+# ① clarify 选项标准化（_normalize_choice → _extract_readable_from_dict → normalize_clarify_choices）
+# ② build_cron_card — 极简静态卡片，仅 markdown
+# ③ build_gateway_card — gateway 内部消息卡片（slash 命令、auth、session、error）
+# ④ build_clarify_card — 三态澄清卡片：待选择 → 已提交 → 已确认
+# ▍修改铁律
+# 1. clarify 选项必须走 normalize_clarify_choices，别直接塞原始 choices — 用户输入五花八门，dict/list/乱码都可能来。
+# 2. select_static 的 options 用 plain_text（不用 lark_md）— 飞书下拉框不渲染 markdown。
+# 3. build_cron_card 的 summary 截断长度走 _def.SUMMARY_MAX_LENGTH，别硬编码。
+# ▍更新记录
+# *更新：2026-08-13 · 添加龙崎注释风格*
+# =================================================================
 
 from __future__ import annotations
 
@@ -23,6 +41,13 @@ __all__ = [
     'normalize_clarify_choices',
 ]
 
+
+# ================================================================
+# ▍clarify 选项标准化 — 防御 LLM 和用户的各种奇葩输入
+# 输入可能是纯字符串、dict repr 字符串、真正的 dict、list、None。
+# 全部收敛成干净的 str，超长截断。不改这里会出乱码或空白选项。
+# ================================================================
+
 _CLARIFY_DICT_FIELD_PRIORITY = (
     "label", "description", "text", "title",
     "name", "path", "value", "id",
@@ -31,8 +56,13 @@ _CLARIFY_DICT_FIELD_PRIORITY = (
 _CLARIFY_MAX_CHOICE_LEN = 80
 
 def _normalize_choice(choice: Any) -> str:
-    """Normalize clarify choice to readable string. Handles: plain string,
-    dict-repr string (parsed via ast.literal_eval), real dict. Never raises."""
+    """_normalize_choice()：契约
+    入参：choice（Any）— 任意类型的选项原始值
+    返回：str — 可读的选项文本，空字符串表示无效
+    副作用：无
+    谁调用：normalize_clarify_choices() 逐项调用
+    改动影响：改字段优先级会改变 dict 类选项的显示文案
+    """
     if choice is None:
         return ""
     if not isinstance(choice, str):
@@ -47,7 +77,7 @@ def _normalize_choice(choice: Any) -> str:
     if not text:
         return ""
 
-    # Parse dict-repr strings: starts with { ends with }.
+    # ⚠️ dict repr 字符串：LLM 有时返回 "{'label': 'xxx'}" 这种
     if text.startswith("{") and text.endswith("}"):
         try:
             parsed = ast.literal_eval(text)
@@ -59,12 +89,12 @@ def _normalize_choice(choice: Any) -> str:
                 text = extracted
 
     if len(text) > _CLARIFY_MAX_CHOICE_LEN:
-        text = text[: _CLARIFY_MAX_CHOICE_LEN - 1] + "…"
+        text = text[: _CLARIFY_MAX_CHOICE_LEN - 1] + "..."
 
     return text
 
 def _extract_readable_from_dict(d: dict) -> str:
-    """Extract readable string field from dict (priority order, strings only)."""
+    """从 dict 中按优先级提取可读字段（只认字符串值）."""
     for field in _CLARIFY_DICT_FIELD_PRIORITY:
         val = d.get(field)
         if isinstance(val, str) and val.strip():
@@ -72,7 +102,13 @@ def _extract_readable_from_dict(d: dict) -> str:
     return ""
 
 def normalize_clarify_choices(choices: list[str] | None) -> list[str]:
-    """Normalize choices for display + AI resolution. Filters empty."""
+    """normalize_clarify_choices()：契约
+    入参：choices（list[str] | None）— 原始选项列表
+    返回：list[str] — 标准化后的选项，过滤空值
+    副作用：无
+    谁调用：build_clarify_card()、外部 adapter
+    改动影响：改这里会影响所有 clarify 卡片的选项显示
+    """
     if not choices:
         return []
     normalized = []
@@ -82,8 +118,20 @@ def normalize_clarify_choices(choices: list[str] | None) -> list[str]:
             normalized.append(n)
     return normalized
 
+
+# ================================================================
+# ▍build_cron_card — 定时推送极简卡片
+# 仅 markdown 内容，无交互元素，无 header。
+# ================================================================
+
 def build_cron_card(content: str) -> dict[str, Any]:
-    """Cron 推送用的极简静态卡片 — schema 2.0，仅 markdown 内容."""
+    """build_cron_card()：契约
+    入参：content（str）— markdown 格式的推送内容
+    返回：dict — CardKit 2.0 schema 卡片 JSON
+    副作用：无
+    谁调用：controller._do_cron_deliver()
+    改动影响：改 schema 版本会影响飞书渲染
+    """
     card: dict[str, Any] = {
         "schema": "2.0",
         "config": {"locales": _LOCALES},
@@ -100,9 +148,21 @@ def build_cron_card(content: str) -> dict[str, Any]:
             card["body"]["elements"].append({"tag": "markdown", "content": chunk})
     return card
 
+
+# ================================================================
+# ▍build_gateway_card — gateway 内部消息卡片
+# 用于 slash 命令回复、auth、session、error 等轻量场景。
+# category 保留给 reaction routing 用。
+# ================================================================
+
 def build_gateway_card(content: str, *, category: str = "", status_label: str = "", status_emoji: str = "") -> dict[str, Any]:
-    """Gateway-internal message card — lightweight, static, no streaming. For slash
-    command replies, auth, session, errors. category retained for reaction routing."""
+    """build_gateway_card()：契约
+    入参：content（str）— markdown 内容；category/status_label/status_emoji — 可选装饰
+    返回：dict — CardKit 2.0 schema 卡片 JSON
+    副作用：无
+    谁调用：controller._do_gateway_deliver(), controller._do_gateway_card_update()
+    改动影响：改卡片结构会影响所有 gateway 消息的外观
+    """
     elements: list[dict] = []
 
     if status_label and status_emoji:
@@ -134,9 +194,21 @@ def build_gateway_card(content: str, *, category: str = "", status_label: str = 
 
     return card
 
+
+# ================================================================
+# ▍build_clarify 系列 — 三态澄清交互卡片
+# 状态机：待选择(Pending) → 已提交(Soft Lock) → 已确认(Hard Lock)
+# 每个状态对应一个独立的构建函数，卡片外观和交互元素不同。
+# ================================================================
+
 def build_clarify_card(*, question: str, choices: list[str] | None = None, clarify_id: str = "") -> dict[str, Any]:
-    """构建 Clarify 待选择态卡片 (State 1: Pending). 三态: 标题/选项列表/快速选择下拉/
-    自定义输入. choices 经 normalize + escape for lark_md. select_static 用 plain_text."""
+    """build_clarify_card()：契约 — 待选择态(State 1: Pending)
+    入参：question — 澄清问题；choices — 可选项列表；clarify_id — 唯一标识
+    返回：dict — 含 select_static 下拉 + input 自由输入的交互卡片
+    副作用：无
+    谁调用：gateway clarify handler
+    改动影响：改 behaviors 里的 callback value 会影响后端回调解析
+    """
     elements: list[dict] = []
 
     elements.append({
@@ -153,7 +225,7 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
         },
     })
 
-    # Defense in depth: adapter also normalizes, but card builders must be safe.
+    # ⚠️ 防御性双重标准化：adapter 层也做，但卡片构建必须自保
     normalized_choices = normalize_clarify_choices(choices)
 
     if normalized_choices:
@@ -167,7 +239,7 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
             "content": options_md,
         })
 
-        # select_static dropdown (plain_text, no markdown).
+        # ⚠️ select_static 用 plain_text（不用 lark_md）— 飞书下拉框不渲染 markdown
         options: list[dict] = []
         for i, choice in enumerate(normalized_choices):
             label = chr(ord("A") + i) if i < 26 else str(i + 1)
@@ -229,9 +301,13 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
     return card
 
 def build_clarify_submitted_card(*, question: str, selected: str, clarify_id: str = "") -> dict[str, Any]:
-    """构建 Clarify 已提交态卡片 (State 2: Submitted/Soft Lock). 标题 + 用户选择 +
-    "已提交" 提示 + 重试按钮."""
-    # Escape selected for lark_md (rendered inside "已选择: {}" template).
+    """build_clarify_submitted_card()：契约 — 已提交态(State 2: Soft Lock)
+    入参：question — 原始问题；selected — 用户选择；clarify_id — 唯一标识
+    返回：dict — 含锁图标 + 已选择 + 重试按钮的静态卡片
+    副作用：无
+    谁调用：gateway clarify handler（用户提交后）
+    改动影响：改 retry 按钮的 callback value 会影响重试逻辑
+    """
     safe_selected = _escape_md(selected)
     en_selected, zh_selected = _T["clarify_selected"]
     en_sel_label = en_selected.format(safe_selected)
@@ -309,7 +385,13 @@ def build_clarify_submitted_card(*, question: str, selected: str, clarify_id: st
     return card
 
 def build_clarify_confirmed_card(*, question: str, selected: str) -> dict[str, Any]:
-    """构建 Clarify 已确认态卡片 (State 3: Confirmed/Hard Lock). 标题 + 选择 + "已确认"."""
+    """build_clarify_confirmed_card()：契约 — 已确认态(State 3: Hard Lock)
+    入参：question — 原始问题；selected — 最终选择
+    返回：dict — 绿色确认图标 + 选择结果的只读卡片
+    副作用：无
+    谁调用：gateway clarify handler（确认完成后）
+    改动影响：无交互元素，改这里只影响视觉
+    """
     safe_selected = _escape_md(selected)
     en_selected, zh_selected = _T["clarify_selected"]
     en_sel_label = en_selected.format(safe_selected)

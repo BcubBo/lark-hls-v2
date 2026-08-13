@@ -1,3 +1,41 @@
+# ================================================================
+# lark-hls-v2 · controller.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么（四问）
+# ① 干什么：流式卡片控制器 — 插件的入口门面。接收 Hermes 的生命周期事件（消息开始/思考/推理/工具/回答/完成/中断/终止），分发到对应处理逻辑。
+# ② 技术栈：asyncio + threading 混合模型。session 管理用 threading.RLock 保护，异步操作用 fire-and-forget。
+# ③ 依赖：card_flow.py (UnifiedControllerMixin 提供卡片生命周期)、config、state、feishu 客户端。
+# ④ 给谁看：接入新事件、改 session 管理逻辑、排查中断/续接问题的人。
+#
+# ▍文件从上到下的结构
+# StreamCardController(UnifiedControllerMixin) — 单例控制器
+#   ├─ __init__ — 初始化 Config/FeishuClient/session 存储/interrupt_map/continuation_map
+#   ├─ Session CRUD — _sess_get/put/pop/items_snapshot/active_count/clear (线程安全)
+#   ├─ FeishuClient init — _ensure_init (double-check locking)
+#   ├─ Continuation — delegate_task 续接机制，旧 session streaming_closed 后创建新 session
+#   ├─ Cleanup — _cleanup / _reset_session_state / _prune_stale_sessions
+#   ├─ Public hooks — on_message_started / on_thinking / on_reasoning / on_tool_update / on_answer
+#   │                 on_aborted / on_interrupted / on_completed
+#   ├─ Completion — _dispatch_completion / _complete_with_fallback / _send_text_fallback
+#   └─ Delivery — on_cron_deliver_async / _do_gateway_deliver / _do_gateway_card_update
+# get_controller() — 模块级单例工厂
+#
+# ▍修改铁律（血泪教训）
+# 1. session 存储用 RLock 保护 — 异步回调和定时器可能并发访问。
+# 2. interrupt_map 有上限 (200) — 超限淘汰旧条目，防止内存泄漏。
+# 3. on_message_started 会中断同 chat 的旧 session — 改了会影响多轮对话。
+# 4. continuation 机制: streaming_closed 的旧 session 可被续接，创建新卡片继续回答。
+# 5. on_completed 先查 continuation_map 再查 direct session 再查 interrupt_map — 三层查找。
+# 6. _send_text_fallback 是卡片不可用时的兜底 — 文本限制 4000 字。
+# 7. 单例模式: get_controller() 用全局 _controller 变量，非线程安全。
+#
+# ▍特殊机制
+# "中断 + 续接"双表: interrupt_map(旧→新消息ID) + continuation_map(旧→续接消息ID)。
+# 同一旧消息只能续接一次 (_continuation_reactivation_count 限制)。
+#
+# ▍更新记录
+# *v2 fork: 从原版 controller.py 重构，拆分 card_flow 到独立模块*
+# ================================================================
+
 """StreamCardController v2 — thin orchestrator composing lifecycle + card + flush."""
 
 from __future__ import annotations
@@ -130,6 +168,7 @@ class StreamCardController(UnifiedControllerMixin):
         return self._initialized and self._client is not None
 
     def _get_loop(self) -> asyncio.AbstractEventLoop | None:
+        """Get event loop -- prefer running loop, then cached, then get_event_loop."""
         try:
             loop = asyncio.get_running_loop()
             self._loop = loop
@@ -152,6 +191,9 @@ class StreamCardController(UnifiedControllerMixin):
         return session
 
     def _fire_and_forget(self, coro: Coroutine[Any, Any, Any], loop: asyncio.AbstractEventLoop) -> None:
+        """fire-and-forget -- holds Task strong reference to prevent GC.
+        Two paths: loop.create_task (same thread) / run_coroutine_threadsafe (cross thread).
+        """
         try:
             task = loop.create_task(coro)
             self._pending_tasks.add(task)
@@ -515,6 +557,9 @@ class StreamCardController(UnifiedControllerMixin):
         aborted: bool = False, error_message: str = "", reasoning_tokens: int = 0,
         estimated_cost_usd: float = 0.0, cost_status: str = "unknown",
     ) -> bool:
+        """完成事件: 收集 footer 数据 (duration/model/tokens/context) -> COMPLETING -> 封卡。
+        三层查找: continuation_map -> direct session -> interrupt_map。
+        """
         if not self.enabled:
             return False
         if not message_id:
@@ -609,6 +654,7 @@ class StreamCardController(UnifiedControllerMixin):
     def defer_background_review(
         self, *, message_id: str, text: str, sender: Callable[[str], Any],
     ) -> bool:
+        """后台审查: 延迟发送的审查内容，写入 unified_state 或 deferred 列表。"""
         if not self.enabled or not text or not callable(sender):
             return False
         session = self._get_active_session(message_id)
@@ -644,11 +690,13 @@ class StreamCardController(UnifiedControllerMixin):
     # ── Completion paths (delegate to card_flow) ─────────────────
 
     def _dispatch_completion(self, session: CardSession) -> None:
-        """Dispatch card completion (async). Both linear and non-linear use the same path."""
+        """分发封卡: 通过 fire_and_forget 异步执行 _complete_with_fallback。"""
         self._fire_and_forget(self._complete_with_fallback(session), session._loop)
 
     async def _complete_with_fallback(self, session: CardSession) -> None:
-        """线性模式完成，卡片不可用时回退为文本回复."""
+        """封卡 + 文本兜底: _complete_card_flow 失败时发送纯文本回复。
+        ⚠️ fallback_text 在调用前快照 — 防止 _reset_session_state 清除数据。
+        """
         # Snapshot fallback text before _complete_card_flow potentially releases it
         _fallback_text = ""
         if session.error_message:
@@ -671,7 +719,7 @@ class StreamCardController(UnifiedControllerMixin):
             await self._send_text_fallback(session, fallback_text=_fallback_text)
 
     async def _send_text_fallback(self, session: CardSession, *, fallback_text: str = "") -> None:
-        """卡片不可用时，通过飞书 API 发送文本回复作为兜底."""
+        """文本兜底: 卡片不可用时回复纯文本。限制 4000 字，会做 markdown 优化。"""
         if not self._client:
             return
         try:
@@ -774,6 +822,7 @@ _controller: StreamCardController | None = None
 
 
 def get_controller() -> StreamCardController:
+    """模块级单例工厂 — 全局唯一 StreamCardController 实例。"""
     global _controller
     if _controller is None:
         _controller = StreamCardController()

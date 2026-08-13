@@ -1,3 +1,34 @@
+# =================================================================
+# lark-hls-v2 · card/elements.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：CardKit 2.0 原始积木构建器 — panel、footer、loading、error 等基础元素
+# ② 技术栈：飞书 CardKit 2.0 JSON schema，递归元素计数
+# ③ 依赖：card/i18n.py、card/md.py（markdown 优化/降级/拆分）、config/defaults.py
+# ④ 给谁看：改卡片元素样式、新增元素类型的开发者
+# ▍文件从上到下的结构
+# ① 常量区 — element ID、正则、图片 key
+# ② 图片提取 — _extract_images_from_markdown（markdown img → Card 2.0 img 元素）
+# ③ 基础积木 — _collapsible_panel / _streaming_element / _loading_* / _count_tag_objects
+# ④ Panel 组装 — build_panel_header / build_panel_children / build_unified_panel
+# ⑤ 工具/推理渲染 — _build_tool_step_* / _build_reasoning_round_title / _tool_status_info
+# ⑥ 辅助渲染 — _format_code_block / _escape_md / _format_elapsed / _compact
+# ⑦ 特殊面板 — _build_error_panel / _build_background_review_panel
+# ⑧ Footer — _build_footer_elements / _render_footer_field
+# ⑨ 顶层元素 — build_card_header / build_quote_block / build_colored_divider
+# ⑩ 封卡 actions — build_seal_actions
+# ▍修改铁律
+# 1. element ID（STREAMING_ELEMENT_ID 等）是跨文件契约，改了 card_flow.py 和 builder.py 会全部炸。
+# 2. _count_tag_objects 是 200 元素上限的核心检测，改递归逻辑会导致超限或误裁。
+# 3. _collapsible_panel 的结构被 builder.py 和 card_flow.py 依赖，改 key 名会 schema error。
+# 4. _render_footer_field 的返回值是 (en, zh) 元组，改格式会影响 footer 渲染。
+# ▍外号表
+# "loading hint" → _LOADING_HINT_ELEMENT_ID（"正在加载上下文..."占位元素）
+# "loading icon" → _LOADING_ELEMENT_ID（底部旋转 loading）
+# "panel" → UNIFIED_PANEL_ELEMENT_ID（推理+工具折叠面板）
+#
+# ▍更新记录
+# *更新：2026-08-13 · 添加龙崎注释风格*
+# =================================================================
 """CardKit v2.0 — Primitive element builders: panels, footers, helpers."""
 
 from __future__ import annotations
@@ -6,15 +37,19 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from .i18n import _LOCALES, _T, _i18n, _t
+# ================================================================
+# ▍markdown 优化依赖 — 表格降级、长文本拆分、样式优化
+# ================================================================
 from .md import (
     _downgrade_tables,
     _split_long_text,
     optimize_markdown_style,
 )
 
-# ── Config-driven colors ────────────────────────────────────────────────
-# Read from defaults at import time (zero-cost, no Config overhead).
-# Only falls back to Config if config.yaml has an override.
+# ================================================================
+# ▍Config 驱动的颜色配置 — 面板边框和标题栏颜色
+# 导入时从 defaults 读取（零开销），config.yaml 有覆盖时才走 Config。
+# ================================================================
 from ..config import defaults as _defaults
 
 _panel_border_color: str = _defaults.PANEL_BORDER_COLOR
@@ -74,6 +109,9 @@ __all__ = [
     'build_colored_divider',
 ]
 
+# ================================================================
+# ▍正则常量 — 图片提取、多空行清理、反引号检测、markdown 特殊字符转义
+# ================================================================
 _IMG_MD_PATTERN = re.compile(r"!\[([^\]]*)\]\((img_[^)\s]+)\)")
 _RE_MULTI_NEWLINE = re.compile(r"\n{3,}")
 _RE_BACKTICK_RUN = re.compile(r"`+")
@@ -103,6 +141,10 @@ def _extract_images_from_markdown(text: str) -> tuple[str, list[dict]]:
 if TYPE_CHECKING:
     from ..state.linear import ReasoningRound
 
+# ================================================================
+# ▍Element ID 常量 — ★核心★ 跨文件契约，改了全炸
+# card_flow.py / builder.py / controller.py 都依赖这些 ID
+# ================================================================
 STREAMING_ELEMENT_ID = "streaming_content"
 ANSWER_ELEMENT_ID = "answer_content"
 UNIFIED_PANEL_ELEMENT_ID = "agent_process_panel"
@@ -110,6 +152,11 @@ _LOADING_ELEMENT_ID = "loading_icon"
 _LOADING_HINT_ELEMENT_ID = "context_loading_hint"
 _LOADING_IMG_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 
+# ================================================================
+# ▍_count_tag_objects — 递归计数含 tag 键的 JSON 对象
+# 飞书 Card 2.0 的 200 元素上限检测核心，被 builder.py 和 card_flow.py 调用。
+# 【不】改递归逻辑 — 会导致超限误判或漏判。
+# ================================================================
 def _count_tag_objects(obj: Any) -> int:
     """Recursively count JSON objects with tag key. Feishu Card 2.0 caps at 200 elements."""
     count = 0
@@ -123,6 +170,11 @@ def _count_tag_objects(obj: Any) -> int:
             count += _count_tag_objects(item)
     return count
 
+# ================================================================
+# ▍_collapsible_panel — 可折叠面板积木
+# 所有折叠面板（推理、工具、error、bg review）的基础结构。
+# 返回的 dict 结构被 build_unified_panel / _build_error_panel 等依赖。
+# ================================================================
 def _collapsible_panel(
     *,
     expanded: bool,
@@ -156,6 +208,9 @@ def _collapsible_panel(
         "elements": elements,
     }
 
+# ================================================================
+# ▍流式元素 + Loading 元素 — 卡片的基础占位积木
+# ================================================================
 def _streaming_element(content: str = "", *, element_id: str = STREAMING_ELEMENT_ID) -> dict:
     return {
         "tag": "markdown",
@@ -214,6 +269,9 @@ def _loading_hint_thinking_element() -> dict:
         "element_id": _LOADING_HINT_ELEMENT_ID,
     }
 
+# ================================================================
+# ▍Unified Panel 占位 — 首卡的空 panel，首字即显时才填充内容
+# ================================================================
 def _build_unified_panel_placeholder(*, expanded: bool = False) -> dict:
     """Build empty unified panel placeholder for initial streaming card."""
     en_title, zh_title = _T["agent_process"]
@@ -232,6 +290,12 @@ def _build_unified_panel_placeholder(*, expanded: bool = False) -> dict:
     panel["element_id"] = UNIFIED_PANEL_ELEMENT_ID
     return panel
 
+# ================================================================
+# ▍Panel Header / Children / Unified Panel — ★核心★ 面板组装三件套
+# build_panel_header → 标题（轮次/工具数/耗时）
+# build_panel_children → 子元素（推理/工具步骤，时间线或顺序渲染）
+# build_unified_panel → 组装完整折叠面板
+# ================================================================
 def build_panel_header(*, reasoning_rounds: list, current_reasoning_text: str = "", tool_steps: list[dict], tool_elapsed_ms: float = 0, show_reasoning: bool = True, panel_quote: str = "") -> dict:
     """Build header dict for unified panel. Title computed from state (rounds/tools/elapsed)."""
     en_title, zh_title = _T["agent_process"]
@@ -290,7 +354,8 @@ def build_panel_header(*, reasoning_rounds: list, current_reasoning_text: str = 
         "icon_expanded_angle": -180,
     }
 
-_REASONING_DISPLAY_LIMIT = 2000  # 单条推理文本最大显示字数
+# ⚠️ 单条推理文本最大显示 2000 字 — 超长推理会导致卡片渲染卡顿
+_REASONING_DISPLAY_LIMIT = 2000
 
 def _truncate_reasoning(text: str) -> str:
     """截断过长推理文本至 _REASONING_DISPLAY_LIMIT."""
@@ -473,6 +538,9 @@ def build_unified_panel(*, reasoning_rounds: list, current_reasoning_text: str =
     panel["element_id"] = element_id or UNIFIED_PANEL_ELEMENT_ID
     return panel
 
+# ================================================================
+# ▍工具步骤渲染 — 单个工具步骤的标题/详情/输出组装
+# ================================================================
 def _build_tool_step_elements(step: dict) -> list[dict]:
     elements: list[dict] = [_build_tool_step_title(step)]
     detail = _build_tool_step_detail(step)
@@ -578,6 +646,9 @@ def _build_tool_step_output(step: dict) -> dict | None:
         },
     }
 
+# ================================================================
+# ▍辅助渲染函数 — 状态颜色、代码块、markdown 转义
+# ================================================================
 def _tool_status_info(status: str) -> dict[str, str]:
     return {
         "running": {"label": "", "color": "orange-300"},
@@ -597,6 +668,10 @@ def _longest_backtick_run(value: str) -> int:
 def _escape_md(value: str) -> str:
     return _RE_MD_SPECIAL.sub(r"\\\1", value.replace("\\", "\\\\"))
 
+# ================================================================
+# ▍特殊面板 — 错误面板 / 后台审查面板
+# error panel 用红色边框，interrupt panel 用橙色边框。
+# ================================================================
 def _build_error_panel(error_message: str, *, is_aborted: bool = False, expanded: bool = True, card_trace_id: str = "") -> dict:
     """Build collapsible error/interrupt panel. Error: red border. Interrupt: orange."""
     if is_aborted:
@@ -671,6 +746,10 @@ def _build_background_review_panel(messages: list[str], *, expanded: bool = True
         panel["element_id"] = element_id
     return panel
 
+# ================================================================
+# ▍Footer 渲染 — 卡片底部状态栏（状态/耗时/token/模型等）
+# footer_fields 是二维列表，内层列表的字段用 " · " 连接。
+# ================================================================
 def _build_footer_elements(
     footer_data: dict | None,
     is_error: bool = False,
@@ -716,9 +795,12 @@ def _build_footer_elements(
         },
     ]
 
+# ================================================================
+# ▍顶层元素构建器 — header / quote_block / colored_divider
+# ================================================================
 def build_card_header(
     *,
-    title: str = "",
+    title: str = "", 
     subtitle: str = "",
     icon_token: str = "info_outlined",
     template: str = "green",
@@ -786,6 +868,11 @@ def build_colored_divider(*, color: str = "grey") -> dict:
     }
 
 
+# ================================================================
+# ▍build_seal_actions — ★核心★ 封卡 batch_update actions 构建
+# 插入 error panel + footer → 删除 loading_hint + loading_icon。
+# existing_elements 过滤已删除的元素，避免重复删除报错。
+# ================================================================
 def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "") -> list[dict]:
     """构建保留式封卡 batch_update actions. Inserts error panel + footer via insert_before
     loading_icon, then deletes loading_hint + loading_icon. existing_elements filters deletes."""
@@ -888,6 +975,13 @@ def _render_footer_field(
     is_aborted: bool,
     show_label: bool,
 ) -> tuple[str | None, str | None]:
+    """_render_footer_field()：契约
+    入参：name — 字段名（status/elapsed/model/tokens/context/api_calls/...）；data — footer 数据
+    返回：tuple[str|None, str|None] — (英文, 中文)，None 表示该字段不显示
+    副作用：无
+    谁调用：_build_footer_elements() 逐字段调用
+    改动影响：改返回格式会影响所有 footer 行的渲染
+    """
     if name == "status":
         if is_error:
             en, zh = _T["status_error"]

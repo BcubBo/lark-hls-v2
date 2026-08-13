@@ -1,5 +1,31 @@
 """Hermes compatibility adapter — isolates all Hermes internal interface access."""
 
+# ================================================================
+# lark-hls-v2 · interceptors/hermes_compat.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：封装所有对 Hermes 内部模块的 import 和类查找。
+#    隔离 Hermes 版本差异（v0.5 ~ v0.19+），让 interceptors/ 其他模块
+#    不直接 import gateway.run / run_agent 等不稳定的内部路径。
+# ② 技术栈：importlib + sys.modules + pathlib，纯 Python。
+# ③ 依赖：Hermes 内部模块（gateway.run、run_agent、agent.conversation_loop、
+#    cron.scheduler 等）— 这些路径在不同 Hermes 版本间可能变化。
+# ④ 给谁看：interceptors/__init__.py（apply_patches 用它获取类引用）。
+# ▍结构
+# HermesCompat 类：
+#   __init__() → _detect_version() + _resolve_modules()
+#   _resolve_modules() → 解析 GatewayRunner / AIAgent / FeishuAdapter / CronScheduler / ConversationLoop
+#   _resolve_feishu_adapter() → 按优先级尝试 3 个 import 路径
+#   _resolve_conversation_loop() → 3 级策略：sys.modules → anchor-based → 标准 import
+#   has_* 属性 + get_layout_report() → 供 apply_patches() 查询可用性
+# ▍修改铁律
+# 1. FeishuAdapter 的 import 路径顺序很关键：真身（hermes_plugins.feishu_platform.adapter）
+#    必须优先于替身（plugins.platforms.feishu.adapter），否则 deferred loading 场景下
+#    会 patch 错误的类（详见 hls-plugin-dev skill 的 v1.4.0/v1.6.0 坑记录）。
+# 2. conversation_loop 的 anchor-based 发现策略是为了绕过 Apple Silicon 命名空间冲突，
+#    改了可能导致 macOS 上加载失败。
+# 3. 所有 import 都用 try/except 包裹 — Hermes 版本差异导致的 ImportError 是正常的。
+# ================================================================
+
 from __future__ import annotations
 import importlib
 import importlib.util
@@ -10,24 +36,25 @@ from typing import Any, Optional
 
 _logger = logging.getLogger("lark_hls_v2")
 
+
 class HermesCompat:
     """Encapsulates all Hermes internal module access."""
-    
+
     def __init__(self):
         self._detect_version()
         self._resolve_modules()
-    
+
     def _detect_version(self) -> None:
         """Detect Hermes version from various sources."""
         self.hermes_version: str = "unknown"
-        
+
         # Try importlib.metadata
         try:
             from importlib.metadata import version
             self.hermes_version = version("hermes-agent")
         except Exception:
             pass
-        
+
         # Try __version__ attribute
         if self.hermes_version == "unknown":
             try:
@@ -35,9 +62,9 @@ class HermesCompat:
                 self.hermes_version = getattr(hermes_cli, "__version__", "unknown")
             except Exception:
                 pass
-        
+
         _logger.info("HLS: Hermes version detected: %s", self.hermes_version)
-    
+
     def _resolve_modules(self) -> None:
         """Resolve all Hermes internal modules, recording what's available."""
         self.gateway_runner_class: Any | None = None
@@ -47,14 +74,14 @@ class HermesCompat:
         self.conversation_loop_module: Any | None = None
         self.conversation_loop_func: Any | None = None
         self.run_agent_module: Any | None = None
-        
+
         # GatewayRunner
         try:
             from gateway.run import GatewayRunner
             self.gateway_runner_class = GatewayRunner
         except Exception:
             _logger.debug("HLS: GatewayRunner not available yet")
-        
+
         # AIAgent
         try:
             from run_agent import AIAgent
@@ -62,11 +89,11 @@ class HermesCompat:
             self.run_agent_module = sys.modules.get("run_agent")
         except Exception:
             _logger.debug("HLS: AIAgent not available yet")
-        
+
         # FeishuAdapter — 抽取到 _resolve_feishu_adapter()，
         # 便于 resolve_feishu_adapter_class_fresh() 复用（v1.4.0: fix deferred loading patch miss）
         self.feishu_adapter_class = self._resolve_feishu_adapter()
-        
+
         # Cron scheduler
         for mod_name in ("cron.scheduler", "gateway.cron.scheduler"):
             try:
@@ -76,10 +103,10 @@ class HermesCompat:
                     break
             except ImportError:
                 continue
-        
+
         # Conversation loop (with namespace collision workaround)
         self._resolve_conversation_loop()
-    
+
     def _resolve_feishu_adapter(self) -> Any | None:
         """Resolve FeishuAdapter class through the gateway's namespace."""
         # 顺序很关键：真身（hermes_plugins.feishu_platform.adapter）优先，确保
@@ -102,11 +129,11 @@ class HermesCompat:
                 continue
         _logger.debug("HLS: FeishuAdapter not available via any import path")
         return None
-    
+
     def resolve_feishu_adapter_class_fresh(self) -> Any | None:
         """Re-resolve FeishuAdapter class without reusing cached state."""
         return self._resolve_feishu_adapter()
-    
+
     def _resolve_conversation_loop(self) -> None:
         """Resolve agent.conversation_loop, handling Apple Silicon namespace collision."""
         # Strategy 1: sys.modules cache
@@ -118,7 +145,7 @@ class HermesCompat:
                 self.conversation_loop_func = func
                 _logger.debug("HLS: conversation_loop resolved via sys.modules")
                 return
-        
+
         # Strategy 2: Anchor-based discovery
         for anchor_name in ("gateway.run", "run_agent"):
             anchor = sys.modules.get(anchor_name)
@@ -151,7 +178,7 @@ class HermesCompat:
                     return
             except Exception as e:
                 _logger.debug("HLS: anchor-based load failed: %s", e)
-        
+
         # Strategy 3: Standard import
         try:
             from agent.conversation_loop import run_conversation as _func
@@ -160,27 +187,27 @@ class HermesCompat:
             self.conversation_loop_func = _func
         except Exception:
             pass
-    
+
     @property
     def has_gateway_runner(self) -> bool:
         return self.gateway_runner_class is not None
-    
+
     @property
     def has_aiagent(self) -> bool:
         return self.aiagent_class is not None
-    
+
     @property
     def has_feishu_adapter(self) -> bool:
         return self.feishu_adapter_class is not None
-    
+
     @property
     def has_cron_scheduler(self) -> bool:
         return self.cron_scheduler_module is not None
-    
+
     @property
     def has_conversation_loop(self) -> bool:
         return self.conversation_loop_func is not None
-    
+
     def get_layout_report(self) -> dict[str, bool]:
         """Return a dict of what's available — for doctor command and logging."""
         return {

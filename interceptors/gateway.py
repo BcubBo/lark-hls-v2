@@ -1,3 +1,26 @@
+# ================================================================
+# lark-hls-v2 interceptors/gateway.py -- 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：wrap GatewayRunner 的核心方法（_handle_message / _handle_message_with_agent /
+#    _run_agent / _run_background_task / _wrap_cron_deliver / _wrap_run_conversation），
+#    在消息生命周期的每个阶段注入 START / COMPLETE / ABORT / INTERRUPT 钩子。
+# ② 技术栈：Python 3.11+ / functools.wraps / contextvars
+# ③ 依赖：interceptors.hooks / interceptors.callbacks / state.phase.TERMINAL_PHASES
+# ④ 给谁看：维护 lark-hls-v2 的开发者，理解消息生命周期和中断处理。
+# ▍文件从上到下的结构
+# _wrap_handle_message: NORMALIZE 钩子 + /aowen interrupt hint 检测
+# _wrap_handle_message_with_agent: START 钩子 + 中断检测 + COMPLETE/ABORT 钩子
+# _wrap_run_agent: 中断时创建新上下文 + 子/父消息 COMPLETE 钩子
+# _wrap_run_conversation: wrap 流式回调 + persist_user_timestamp 兼容
+# _wrap_run_background_task: /background 任务的 START/COMPLETE 钩子
+# _wrap_cron_deliver: cron 推送重定向到 CardKit 卡片
+# ▍修改铁律
+# 1. _msg_ctx 的清理必须在 finally 块里执行，【不】在正常路径外清理，改了会导致上下文泄漏。
+# 2. _saved_parent_ctx 的恢复逻辑是中断处理的核心，【不】删掉，改了会导致 "wrong card gets completion" bug。
+# 3. _started_msg_ids 用于检测中断，【不】改 discard 时机，改了会导致误判中断。
+# 4. /aowen interrupt hint 检测在 _handle_message 最前面，【不】移到后面，改了会导致 /aowen 命令被当作普通消息处理。
+# ================================================================
+
 """GatewayRunner method wrappers and cron delivery interception."""
 
 from __future__ import annotations
@@ -16,14 +39,14 @@ from . import (
     _logger,
 )
 
-# ── GatewayRunner method wrappers ──────────────────────────────────
+# ▍_wrap_handle_message -- NORMALIZE 钩子 + /aowen interrupt hint
 
 def _wrap_handle_message(orig: Callable) -> Callable:
     """Inject NORMALIZE hook at the top of GatewayRunner._handle_message."""
 
     @functools.wraps(orig)
     async def wrapper(self, event, *args, **kwargs):
-        # NORMALIZE hook — fires before any message processing
+        # NORMALIZE hook -- fires before any message processing
         try:
             from .hooks import on_feishu_normalize
 
@@ -36,6 +59,8 @@ def _wrap_handle_message(orig: Callable) -> Callable:
         except Exception:
             _logger.warning("HLS: suppressed exception", exc_info=True)
 
+        # ── /aowen interrupt hint 检测 ──
+        # 如果 agent 正在运行时收到 /aowen，发送提示卡片而非让 LLM 处理。
         try:
             _text = (getattr(event, "text", "") or "").strip()
             if _text.lower().startswith("/aowen"):
@@ -48,7 +73,7 @@ def _wrap_handle_message(orig: Callable) -> Callable:
                     except Exception:
                         _logger.debug("HLS: _session_key_for_source failed", exc_info=True)
                     if _quick_key and _quick_key in self._running_agents:
-                        # Agent is running — send interrupt hint card
+                        # Agent is running -- send interrupt hint card
                         from ..aowen import build_interrupt_hint_card, _send_card_async
                         _chat_id = getattr(_source, "chat_id", "") if _source else ""
                         if _chat_id:
@@ -65,6 +90,8 @@ def _wrap_handle_message(orig: Callable) -> Callable:
         return await orig(self, event, *args, **kwargs)
 
     return wrapper
+
+# ▍_wrap_handle_message_with_agent -- START + 中断检测 + COMPLETE/ABORT
 
 def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
     """Inject START hook at entry and ABORT/INTERRUPT detection on return."""
@@ -100,8 +127,8 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
         }
         _msg_ctx.set(msg_context)
 
-        # v1.3.4 fix (P1): 确保 orig() 抛异常时 _msg_ctx / _started_msg_ids
-        # 导致 _msg_ctx 保留 stale event_message_id，下一条消息的
+        # v1.3.4 fix (P1): 确保 orig() 抛异常时 _msg_ctx / _started_msg_ids 被清理。
+        # 不清理会导致 _msg_ctx 保留 stale event_message_id，下一条消息的
         # FeishuAdapter.send() 被静默抑制（"卡片不出现" bug）。
         def _hls_cleanup_ctx() -> None:
             with _started_msg_ids_lock:
@@ -115,10 +142,9 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
             _hls_cleanup_ctx()
             raise
 
-        # point to the new message's context. We must use the original
         ctx = msg_context
 
-        # AST injection, so we return None to simulate "stale agent result",
+        # ── 非 None 结果：检查是否应抑制纯文本回复 ──
         if result is not None:
             if ctx and ctx.get("card_sent"):
                 _logger.info(
@@ -144,7 +170,8 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                             return None
             except Exception:
                 _logger.warning("HLS: suppressed exception", exc_info=True)
-        # None (the "Discarding stale agent result" path or the
+
+        # ── None 结果：区分正常完成 vs 中断 vs abort ──
         if result is None:
             if ctx and ctx.get("card_sent"):
                 # Bug fix: Hermes returns None when already_sent=True (our
@@ -166,7 +193,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                                     _interrupt_new_mid = _other_mid
                                     break
                         else:
-                            # No controller — fall back to old behavior
+                            # No controller -- fall back to old behavior
                             _real_interrupt = True
                             _interrupt_new_mid = next(iter(others))
                     except Exception:
@@ -185,9 +212,9 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                     except Exception:
                         _logger.warning("HLS: suppressed exception", exc_info=True)
                 # else: card completed normally, Hermes returned None
-                #       to suppress text reply — NOT an abort.
+                #       to suppress text reply -- NOT an abort.
             else:
-                # Card was never sent — real abort (error, reset, /stop, etc.)
+                # Card was never sent -- real abort (error, reset, /stop, etc.)
                 try:
                     from .hooks import on_message_aborted
 
@@ -215,13 +242,14 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                                 _logger.warning("HLS: suppressed exception", exc_info=True)
             except Exception:
                 _logger.warning("HLS: suppressed exception", exc_info=True)
-        # v1.3.4 fix (P1): cleanup on normal exit path (early returns and
-        # exceptions handled by _hls_cleanup_ctx above).
+        # v1.3.4 fix (P1): cleanup on normal exit path
         _hls_cleanup_ctx()
 
         return result
 
     return wrapper
+
+# ▍_wrap_run_agent -- 中断时创建新上下文 + 子/父 COMPLETE 钩子
 
 def _wrap_run_agent(orig: Callable) -> Callable:
     """Inject COMPLETE hook after agent runs; propagate event_message_id."""
@@ -241,7 +269,6 @@ def _wrap_run_agent(orig: Callable) -> Callable:
         channel_prompt=None,
         **kwargs,
     ):
-        # message's ID. We must create a fresh context for the recursive call
         _saved_parent_ctx = None  # Will hold parent context for restoration
         _original_msg_context_ref = None  # Reference to the original msg_context dict
         ctx = _msg_ctx.get()
@@ -293,7 +320,6 @@ def _wrap_run_agent(orig: Callable) -> Callable:
             _thread_local_ctx.data = dict(ctx)
 
         # v1.3.4 fix (P1): 确保 orig() 抛异常时 _saved_parent_ctx 被恢复。
-        # 错误的 message_id（"wrong card gets completion" bug）。
         try:
             result = await orig(
                 self,
@@ -315,9 +341,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                 _thread_local_ctx.data = dict(_saved_parent_ctx)
             raise
 
-        # We must fire B's COMPLETE hook first (with B's result), then
-        # Previous bug: only A's ABORTED COMPLETE was fired, leaving
-        # - B's card quotes A's text (stale session content)
+        # ── 中断场景：先发子消息 COMPLETE，再发父消息 ABORTED ──
         ctx = _msg_ctx.get()
         if _saved_parent_ctx is not None:
             # Step 1: Fire B's (child) COMPLETE hook normally
@@ -408,6 +432,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
             except Exception:
                 _logger.debug("run_agent: parent ABORTED completion failed", exc_info=True)
         elif ctx is not None:
+            # ── 正常（非中断）场景 ──
             try:
                 from .hooks import on_message_completed
 
@@ -479,12 +504,14 @@ def _wrap_run_agent(orig: Callable) -> Callable:
 
     return wrapper
 
+# ▍_wrap_run_conversation -- wrap 流式回调 + persist_user_timestamp 兼容
+
 def _wrap_run_conversation(orig: Callable) -> Callable:
     """Wrap all 6 streaming callbacks right before run_conversation executes."""
     # Lazy import to avoid circular dependency at module load time
     from .callbacks import _maybe_wrap_callbacks  # noqa: F811
 
-    # v1.3.4 fix (P1): inspect.signature 可能对 C 扩展函数/wrapped callable
+    # v1.3.4 fix (P1): inspect.signature may raise for C extension / wrapped callable
     import inspect
     try:
         _has_persist_ts = "persist_user_timestamp" in inspect.signature(orig).parameters
@@ -503,9 +530,6 @@ def _wrap_run_conversation(orig: Callable) -> Callable:
         persist_user_timestamp=None,
         **kwargs,
     ):
-        # v1.3.0: inject_time removed — Hermes v0.17.0+ has built-in
-        # gateway.message_timestamps.enabled for this purpose.
-
         _maybe_wrap_callbacks(self)
         try:
             # 用关键字参数传递，兼容有/无 persist_user_timestamp 的 Hermes 版本
@@ -521,14 +545,14 @@ def _wrap_run_conversation(orig: Callable) -> Callable:
             call_kwargs.update(kwargs)
             return orig(self, user_message, **call_kwargs)
         finally:
-            pass  # v1.3.0: inject_time guard removed
+            pass
 
     return wrapper
 
-# ── Background task wrapper ───────────────────────────────────────
+# ▍_wrap_run_background_task -- /background 任务的 START/COMPLETE 钩子
 
 def _wrap_run_background_task(orig: Callable) -> Callable:
-    """Inject START/COMPLETE hooks for ``/background`` tasks so they get streaming cards."""
+    """Inject START/COMPLETE hooks for /background tasks so they get streaming cards."""
 
     @functools.wraps(orig)
     async def wrapper(self, prompt, source, task_id, **kwargs):
@@ -582,10 +606,9 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
                 return await original_send(chat_id, content, **send_kwargs)
 
             adapter.send = _intercepting_send
-            # run concurrently on the same adapter, the first to finish must
             adapter._hls_bg_sending = getattr(adapter, '_hls_bg_sending', 0) + 1
 
-        # v1.3.4 fix (P1): orig() + COMPLETE hook 都在 try 块内，finally
+        # v1.3.4 fix (P1): orig() + COMPLETE hook 都在 try 块内，finally 清理
         try:
             result = await orig(self, prompt, source, task_id, **kwargs)
 
@@ -597,7 +620,6 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
 
                     _elapsed = time.monotonic() - ctx.get("_msg_start_time", time.monotonic())
 
-                    # Extract cache tokens from agent reference (set by _maybe_wrap_callbacks)
                     _agent_ref = ctx.get("_agent_ref")
                     cache_read = getattr(_agent_ref, "session_cache_read_tokens", 0) if _agent_ref else 0
                     cache_write = getattr(_agent_ref, "session_cache_write_tokens", 0) if _agent_ref else 0
@@ -632,7 +654,6 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
 
                     if card_sent:
                         ctx["card_sent"] = True
-                        # Mark result so upstream knows card was sent
                         if result is not None and isinstance(result, dict):
                             result["_hls_card_sent"] = True
                 except Exception:
@@ -642,19 +663,17 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
         finally:
             if original_send and adapter:
                 adapter.send = original_send
-                # v1.3.2 fix (B3-06): default to 0 (not 1) for consistency —
-                # a counter should never default to 1 when decrementing.
                 adapter._hls_bg_sending = getattr(adapter, '_hls_bg_sending', 0) - 1
-            # v1.3.4 fix (P1): clear context in finally — runs on ALL paths
+            # v1.3.4 fix (P1): clear context in finally -- runs on ALL paths
             _msg_ctx.set(None)
             _thread_local_ctx.data = None
 
     return wrapper
 
-# ── Cron delivery wrapper ──────────────────────────────────────────
+# ▍_wrap_cron_deliver -- cron 推送重定向到 CardKit 卡片
 
 def _wrap_cron_deliver(orig: Callable) -> Callable:
-    """Intercept cron ``_deliver_result`` and redirect Feishu deliveries to CardKit cards."""
+    """Intercept cron _deliver_result and redirect Feishu deliveries to CardKit cards."""
 
     @functools.wraps(orig)
     def wrapper(job, content, adapters=None, loop=None, **kwargs):
@@ -710,8 +729,6 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
                         __version__,
                         chat_id[:12],
                     )
-                    # Return a success result so the original _deliver_result
-                    # thinks the send succeeded
                     try:
                         from gateway.platforms.base import SendResult
                         return SendResult(success=True)
@@ -724,13 +741,11 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
             return await original_send(chat_id, content, **send_kwargs)
 
         feishu_adapter.send = _card_sending_send
-        # Use counter instead of boolean flag — same rationale as _hls_bg_sending.
         feishu_adapter._hls_cron_sending = getattr(feishu_adapter, '_hls_cron_sending', 0) + 1
         try:
             return orig(job, content, adapters=adapters, loop=loop, **kwargs)
         finally:
             feishu_adapter.send = original_send
-            # v1.3.2 fix (B3-06): default to 0 (not 1) for consistency.
             feishu_adapter._hls_cron_sending = getattr(feishu_adapter, '_hls_cron_sending', 0) - 1
 
     return wrapper

@@ -1,4 +1,31 @@
-"""Runtime monkey patching — replaces AST source injection at import time."""
+# ================================================================
+# lark-hls-v2 interceptors/__init__.py -- 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：interceptors 子包的入口文件，定义共享状态（消息上下文、锁、patch 状态），
+#    组装所有子模块（gateway/adapter/callbacks/hooks）的公开 API，提供 apply_patches()
+#    公共入口点。运行时 monkey patch 的调度中心。
+# ② 技术栈：Python 3.11+ / contextvars / threading.Lock
+# ③ 依赖：Hermes gateway.run / run_agent / FeishuAdapter / cron.scheduler
+# ④ 给谁看：维护 lark-hls-v2 的开发者，理解 patch 流程和共享状态结构。
+# ▍文件从上到下的结构
+# 共享状态定义（_msg_ctx / _started_msg_ids / _gateway_cards / _patch_status）
+# 工具函数（_get_config / _get_event_message_id / _get_thread_local_ctx）
+# 子模块导入（gateway / callbacks / adapter / hooks）
+# 核心入口：apply_patches() / _apply_gateway_runner_patches()
+# FeishuAdapter patch 管理：_apply_feishu_adapter_patches / _verify_feishu_patch_identity
+# create_adapter hook：_wrap_platform_registry_create_adapter / _apply_create_adapter_hook
+# 直接 AIAgent patch：_apply_direct_agent_patch
+# ▍修改铁律
+# 1. 子模块导入必须在共享状态定义之后（避免循环依赖）。
+# 2. _msg_ctx 是 contextvars.ContextVar，【不】在 import 时用 get()，改了会导致上下文丢失。
+# 3. _patched_feishu_classes 用 id(cls) 做 key，【不】用类名做 key，改了会导致重复 patch 或漏 patch。
+# 4. _apply_create_adapter_hook 是 v1.6.0 主链修复，【不】删掉它改回定时器方案。
+# 5. apply_patches._applied 用函数属性做幂等守卫，【不】改用全局变量，改了会影响多 profile 场景。
+# ▍外号表
+# "替身" -> apply_patches() 时解析到的 source-path FeishuAdapter class（class A）
+# "真身" -> gateway runtime 实际用的 hermes_plugins.feishu_platform.adapter class（class B）
+# "主链修复" -> _apply_create_adapter_hook（v1.6.0，在 create_adapter 入口拦截）
+# ================================================================
 
 from __future__ import annotations
 
@@ -13,7 +40,7 @@ from .. import __version__
 
 try:
     from .hermes_compat import HermesCompat
-except ImportError:  # pragma: no cover — fallback for pytest-only path
+except ImportError:  # pragma: no cover -- fallback for pytest-only path
     from lark_hls_v2.interceptors.hermes_compat import HermesCompat  # type: ignore[no-redef]
 
 __all__ = [
@@ -39,7 +66,7 @@ __all__ = [
     # FeishuAdapter patch helpers
     '_apply_feishu_adapter_patches',
     '_verify_feishu_patch_identity',
-    # v1.6.0: hook platform_registry.create_adapter — main-chain fix for deferred loading
+    # v1.6.0: hook platform_registry.create_adapter -- main-chain fix for deferred loading
     '_wrap_platform_registry_create_adapter',
     '_apply_create_adapter_hook',
     # From gateway
@@ -84,6 +111,8 @@ __all__ = [
     '_safe_hook',
 ]
 
+# ▍共享状态 -- 所有 interceptor 子模块的公共存储
+
 # Thread-local storage for context propagation into worker threads
 _thread_local_ctx = threading.local()
 _thread_local_ctx.data = None
@@ -94,6 +123,8 @@ def _get_config():
     from ..config import Config
     return Config()
 
+# _msg_ctx: 每条消息的上下文变量，含 event_message_id / card_sent 等状态。
+# 改了这里的 key 结构会导致 adapter/gateway/callbacks 全链路断掉。
 _msg_ctx: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
     "lark_hls_v2_msg_ctx", default=None
 )
@@ -101,6 +132,8 @@ _msg_ctx: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar
 _started_msg_ids: set[str] = set()
 _started_msg_ids_lock = threading.Lock()
 
+# _gateway_cards: 已发送的 gateway 卡片注册表，card_msg_id -> card_info。
+# adapter.send/edit/reaction 都靠它判断是否走卡片路径。
 _gateway_cards: dict[str, dict[str, Any]] = {}
 _gateway_cards_lock = threading.Lock()
 
@@ -108,12 +141,16 @@ _gw_runner_patched: bool = False
 
 _patch_status: dict[str, Any] = {}
 
+# _patched_feishu_classes: 用 id(cls) 跟踪已 patch 的 FeishuAdapter class。
+# 同一个源文件在 deferred loading 下可能产生两个不同 class object，
+# 此 set 确保每个 class object 只 patch 一次。
 _patched_feishu_classes: set[int] = set()
 
 # When both the module-level patch and the direct AIAgent patch are active,
 # The guard prevents the second call from injecting the prefix again.
 
 def _get_event_message_id() -> str | None:
+    """从 _msg_ctx 或 thread-local 取当前消息的 event_message_id。"""
     ctx = _msg_ctx.get()
     if ctx is None:
         ctx = _get_thread_local_ctx()
@@ -171,10 +208,16 @@ from .hooks import (  # noqa: E402
     _safe_hook,
 )
 
-# ── Public entry point ─────────────────────────────────────────────
+# ▍公共入口点
 
 def _apply_gateway_runner_patches() -> bool:
-    """Apply the three critical GatewayRunner method patches."""
+    """_apply_gateway_runner_patches(): 契约
+    入参：无
+    返回：bool（True=patch 成功，False=GatewayRunner 不可用）
+    副作用：monkey patch GatewayRunner 的 _handle_message / _handle_message_with_agent / _run_agent
+    谁调用：apply_patches() / _delayed_gw_patch() 线程
+    改动影响：改了 patch 的方法列表会导致对应的消息生命周期事件丢失
+    """
     global _gw_runner_patched
 
     if _gw_runner_patched:
@@ -218,7 +261,7 @@ def _apply_gateway_runner_patches() -> bool:
 
         if not _patched_methods:
             _logger.error(
-                "lark-hls-v2: GatewayRunner patch FAILED — "
+                "lark-hls-v2: GatewayRunner patch FAILED -- "
                 "no methods found. Streaming cards will NOT work."
             )
             return False
@@ -231,14 +274,21 @@ def _apply_gateway_runner_patches() -> bool:
         return True
     except Exception as e:
         _logger.error(
-            "lark-hls-v2: GatewayRunner patch FAILED — "
+            "lark-hls-v2: GatewayRunner patch FAILED -- "
             "gateway.run found but incompatible. "
             "Streaming cards will NOT work. Error: %s", e,
         )
         return False
 
 def apply_patches() -> None:
-    """Apply all runtime monkey patches to ``GatewayRunner`` and ``AIAgent``."""
+    """apply_patches(): 契约
+    入参：无
+    返回：无
+    副作用：patch GatewayRunner / AIAgent / FeishuAdapter / cron scheduler / create_adapter
+    谁调用：plugin/__init__.py register() / pytest fixtures
+    改动影响：删任何 patch 都会导致对应功能回退到纯文本模式
+    注意：用函数属性 _applied 做幂等守卫，多次调用只执行一次
+    """
     if getattr(apply_patches, "_applied", False):
         return
     apply_patches._applied = True  # type: ignore[attr-defined]
@@ -251,18 +301,18 @@ def apply_patches() -> None:
     layout = compat.get_layout_report()
 
     # ── Patch GatewayRunner ──
-    # This is the core patch — without it, streaming cards cannot work.
+    # This is the core patch -- without it, streaming cards cannot work.
     gw_patched = False
     gw_delayed = False
     if compat.has_gateway_runner:
-        # gateway.run already loaded — patch immediately
+        # gateway.run already loaded -- patch immediately
         if _apply_gateway_runner_patches():
             gw_patched = True
-            _logger.info("lark-hls-v2: GatewayRunner patched ✓")
+            _logger.info("lark-hls-v2: GatewayRunner patched")
     else:
-        # gateway.run not yet loaded — start delayed-patch poll thread
+        # gateway.run not yet loaded -- start delayed-patch poll thread
         _logger.info(
-            "lark-hls-v2: gateway.run not loaded yet — "
+            "lark-hls-v2: gateway.run not loaded yet -- "
             "starting delayed patch poll (2s interval, 60s timeout)",
         )
         gw_delayed = True
@@ -274,12 +324,12 @@ def apply_patches() -> None:
                 time.sleep(2.0)  # Poll every 2 seconds
                 if _apply_gateway_runner_patches():
                     _logger.info(
-                        "lark-hls-v2: GatewayRunner patched (delayed) ✓"
+                        "lark-hls-v2: GatewayRunner patched (delayed)"
                     )
                     return
-            # Timeout — gateway.run never became available
+            # Timeout -- gateway.run never became available
             _logger.error(
-                "lark-hls-v2: gateway.run NOT FOUND after 60s — "
+                "lark-hls-v2: gateway.run NOT FOUND after 60s -- "
                 "this Hermes version may be too old or installed incorrectly. "
                 "Streaming cards will NOT work. "
                 "Please check: 1) Hermes is running via gateway mode, "
@@ -297,7 +347,7 @@ def apply_patches() -> None:
         try:
             _cl_mod.run_conversation = _wrap_run_conversation(_cl_run_conversation)
             _module_patch_applied = True
-            _logger.info("lark-hls-v2: agent.conversation_loop module patched ✓")
+            _logger.info("lark-hls-v2: agent.conversation_loop module patched")
         except (AttributeError, TypeError) as e:
             _logger.warning(
                 "lark-hls-v2: agent.conversation_loop found but "
@@ -321,7 +371,7 @@ def apply_patches() -> None:
             _cron_mod._deliver_result = _wrap_cron_deliver(_cron_mod._deliver_result)
             cron_patched = True
             _logger.info(
-                "lark-hls-v2: cron scheduler patched ✓ (module=%s)",
+                "lark-hls-v2: cron scheduler patched (module=%s)",
                 getattr(_cron_mod, "__name__", "?"),
             )
         except (AttributeError, TypeError) as e:
@@ -334,38 +384,25 @@ def apply_patches() -> None:
     else:
         _logger.info("lark-hls-v2: FeishuAdapter not available via HermesCompat, patch skipped")
 
-    # v1.6.0: hook platform_registry.create_adapter — main-chain fix for
-    # hermes v0.17.0+ bundled platform deferred loading.  The FeishuAdapter
-    # class resolved above may be a "替身" (source-path class A) because the
-    # gateway's "真身" (hermes_plugins.feishu_platform.adapter class B) is not
-    # loaded yet at apply_patches() time.  v1.4.0 used 2s+10s timer repatch
-    # (赌时窗，治标); v1.5.0 replaced it with on-demand repatch inside
-    # _wrap_feishu_adapter_send (chicken-and-egg 死结: wrapper only installed
-    # on already-patched class, so unpatched 真身 never triggers it; and
-    # clarify goes through send_clarify not send, so even a working on-demand
-    # check on send cannot save clarify).  v1.6.0 hooks the single public
-    # adapter-creation entry — platform_registry.create_adapter — so every
-    # FeishuAdapter instance hermes ever creates (initial / reconnect / multiplex)
-    # has its class patched BEFORE it is handed to callers.  No timer, no
-    # chicken-and-egg, covers clarify (send_clarify) and all other methods.
+    # v1.6.0: hook platform_registry.create_adapter -- main-chain fix for
+    # hermes v0.17.0+ bundled platform deferred loading.
     create_adapter_hooked = _apply_create_adapter_hook()
 
     # ── Summary ──
-    # v1.1.0: Record patch status in a structured dict for doctor command
     global _patch_status
     _patch_status = {
         "version": __version__,
-        "gateway_runner": "✓" if gw_patched else ("pending" if gw_delayed else "✗"),
-        "conversation_loop": "✓" if _module_patch_applied else "n/a (direct AIAgent)",
+        "gateway_runner": "ok" if gw_patched else ("pending" if gw_delayed else "missing"),
+        "conversation_loop": "ok" if _module_patch_applied else "n/a (direct AIAgent)",
         "aiagent_direct": "applied",
-        "cron_scheduler": "✓" if cron_patched else "n/a",
-        "background_task": "✓" if gw_patched else ("pending" if gw_delayed else "n/a"),
-        "feishu_adapter": "✓" if feishu_patched else "✗",
-        "create_adapter_hook": "✓" if create_adapter_hooked else "✗",
+        "cron_scheduler": "ok" if cron_patched else "n/a",
+        "background_task": "ok" if gw_patched else ("pending" if gw_delayed else "n/a"),
+        "feishu_adapter": "ok" if feishu_patched else "missing",
+        "create_adapter_hook": "ok" if create_adapter_hooked else "missing",
         "hermes_layout": layout,
     }
     _logger.info(
-        "HLS: patch summary v%s — GatewayRunner=%s conversation_loop=%s "
+        "HLS: patch summary v%s -- GatewayRunner=%s conversation_loop=%s "
         "AIAgent=applied cron=%s background=%s FeishuAdapter=%s create_adapter_hook=%s layout=%s",
         __version__,
         _patch_status["gateway_runner"],
@@ -381,7 +418,13 @@ def apply_patches() -> None:
     # finishes loading all modules (belt-and-suspenders for lazy imports)
 
 def _apply_feishu_adapter_patches(FeishuAdapter, *, is_repatch: bool = False) -> bool:
-    """Apply all FeishuAdapter method patches to the given class."""
+    """_apply_feishu_adapter_patches(): 契约
+    入参：FeishuAdapter（class object），is_repatch（是否允许重新 patch）
+    返回：bool（True=patch 成功）
+    副作用：monkey patch FeishuAdapter 的 send/edit/reaction/clarify 等方法
+    谁调用：apply_patches() / _wrap_platform_registry_create_adapter() / _wrap_feishu_adapter_send()
+    改动影响：删任何方法 patch 都会导致对应卡片功能回退到纯文本
+    """
     if FeishuAdapter is None:
         return False
 
@@ -415,12 +458,12 @@ def _apply_feishu_adapter_patches(FeishuAdapter, *, is_repatch: bool = False) ->
 
         try:
             FeishuAdapter.send_clarify = _wrap_feishu_adapter_send_clarify(FeishuAdapter.send_clarify)
-            _logger.info("lark-hls-v2: FeishuAdapter.send_clarify patched ✓ (clarify interactive card)")
+            _logger.info("lark-hls-v2: FeishuAdapter.send_clarify patched (clarify interactive card)")
         except AttributeError:
             _logger.debug("lark-hls-v2: FeishuAdapter.send_clarify not found, clarify card skipped")
         try:
             FeishuAdapter._handle_card_action_event = _wrap_handle_card_action_event(FeishuAdapter._handle_card_action_event)
-            _logger.info("lark-hls-v2: FeishuAdapter._handle_card_action_event patched ✓ (card action /card suppression)")
+            _logger.info("lark-hls-v2: FeishuAdapter._handle_card_action_event patched (card action /card suppression)")
         except AttributeError:
             _logger.debug("lark-hls-v2: FeishuAdapter._handle_card_action_event not found, /card suppression skipped")
 
@@ -428,7 +471,7 @@ def _apply_feishu_adapter_patches(FeishuAdapter, *, is_repatch: bool = False) ->
         # so a failed attempt can be retried later in the deferred stage).
         _patched_feishu_classes.add(cls_id)
         _logger.info(
-            "lark-hls-v2: FeishuAdapter.send/edit/reaction/image/clarify patched ✓ "
+            "lark-hls-v2: FeishuAdapter.send/edit/reaction/image/clarify patched "
             "(gateway message cards enabled, class_id=%s)",
             cls_id,
         )
@@ -438,7 +481,9 @@ def _apply_feishu_adapter_patches(FeishuAdapter, *, is_repatch: bool = False) ->
         return False
 
 def _verify_feishu_patch_identity(adapter_instance: Any) -> bool:
-    """Verify that an adapter instance's class has been patched by HLS."""
+    """验证 adapter instance 的 class 是否已被 HLS patch。
+    改了验证逻辑会导致 clarify/delegate 卡片回退到纯文本。
+    """
     if adapter_instance is None:
         return False
     cls = type(adapter_instance)
@@ -466,7 +511,7 @@ def _wrap_platform_registry_create_adapter(orig_create_adapter: Callable) -> Cal
         adapter = orig_create_adapter(name, config)
         if adapter is None:
             return adapter
-        # Only patch feishu adapters — other platforms (irc/telegram/...) are
+        # Only patch feishu adapters -- other platforms (irc/telegram/...) are
         # none of our business.  ``name`` is platform.value ("feishu"/"lark");
         # also sniff the class module as a belt-and-suspenders match.
         _is_feishu = False
@@ -506,35 +551,25 @@ def _apply_create_adapter_hook() -> bool:
     Why this is the main-chain fix (not a fallback/compat shim):
 
     - hermes v0.17.0+ loads bundled platforms (feishu/telegram/...) via a
-      *deferred loader*: the real FeishuAdapter class object is only created
+      deferred loader: the real FeishuAdapter class object is only created
       when the gateway first asks for it, which happens AFTER the plugin's
       apply_patches() runs at startup.  So apply_patches() sees only the
-      source-path "替身" class A, patches it, but the gateway later builds a
-      different "真身" class B object (same source, different module object →
-      different class object) and uses class B instances.  Class B is never
-      patched → clarify/delegate/cards fall back to hermes' plain-text
-      BasePlatformAdapter defaults.
+      source-path class A (替身), patches it, but the gateway later builds a
+      different class B object (真身) and uses class B instances.  Class B is
+      never patched so clarify/delegate/cards fall back to hermes plain-text.
 
-    - v1.4.0 fixed this with a 2s+10s timer that re-resolved & re-patched
-      class B.  That works but bets on a time window (fragile if hermes ever
-      loads slower) and is a "兜底" pattern, not a main-chain fix.
+    - v1.4.0 fixed this with a 2s+10s timer that re-resolved and re-patched
+      class B.  That works but bets on a time window (fragile).
 
     - v1.5.0 replaced the timer with an on-demand repatch inside
       _wrap_feishu_adapter_send.  That has a chicken-and-egg deadlock: the
       on-demand check is itself a wrapper installed only on already-patched
-      classes, so the unpatched 真身 never runs it; and clarify dispatches
-      through send_clarify (not send), so even a working on-demand check on
-      send cannot save clarify.
+      classes, so the unpatched 真身 never runs it.
 
     - v1.6.0 hooks the single PUBLIC adapter-creation entry,
-      platform_registry.create_adapter (gateway/platform_registry.py:278),
-      which ALL four adapter-creation paths (initial / reconnect / multiplex
-      start / multiplex reconnect) funnel through.  Every FeishuAdapter
-      instance hermes ever builds has its class patched before it is returned
-      to callers — no timer, no chicken-and-egg, covers send_clarify and
-      every other method.  platform_registry.py had ZERO commits between
-      hermes v0.17.0 and v0.19.0 (22 days, 2976 commits), so this hook point
-      is extremely stable.
+      platform_registry.create_adapter, which ALL four adapter-creation paths
+      funnel through.  Every FeishuAdapter instance has its class patched
+      before it is returned to callers.
 
     Returns True if the hook was installed (or was already installed).
     """
@@ -560,14 +595,16 @@ def _apply_create_adapter_hook() -> bool:
 
     _pr.create_adapter = _wrap_platform_registry_create_adapter(_current)
     _logger.info(
-        "lark-hls-v2: platform_registry.create_adapter hooked ✓ "
-        "(main-chain deferred-loading fix — every FeishuAdapter instance gets "
+        "lark-hls-v2: platform_registry.create_adapter hooked "
+        "(main-chain deferred-loading fix -- every FeishuAdapter instance gets "
         "its class patched at creation)"
     )
     return True
 
 def _apply_direct_agent_patch() -> None:
-    """Directly patch AIAgent.run_conversation as belt-and-suspenders."""
+    """Directly patch AIAgent.run_conversation as belt-and-suspenders.
+    改了这里会导致没有 conversation_loop module 的 Hermes 版本失去流式卡片。
+    """
     AIAgent = HermesCompat().aiagent_class
     if AIAgent is None:
         _logger.info("lark-hls-v2: AIAgent.run_conversation direct patch deferred (run_agent not yet loaded)")
@@ -581,7 +618,7 @@ def _apply_direct_agent_patch() -> None:
             _logger.info("lark-hls-v2: AIAgent.run_conversation already directly patched, skip")
             return
 
-        # v1.3.4 fix (P1): inspect.signature 可能对 C 扩展/wrapped callable 抛异常
+        # v1.3.4 fix (P1): inspect.signature may raise for C extension / wrapped callable
         import inspect
         try:
             _has_persist_ts = "persist_user_timestamp" in inspect.signature(_orig_method).parameters
@@ -599,13 +636,8 @@ def _apply_direct_agent_patch() -> None:
             persist_user_timestamp=None,
             **kwargs,
         ):
-            # v1.3.0: inject_time removed — Hermes v0.17.0+ has built-in
-            # gateway.message_timestamps.enabled for this purpose.
-
             _maybe_wrap_callbacks(self)
             try:
-                # 用关键字参数传递，兼容有/无 persist_user_timestamp 的 Hermes 版本
-                # 如果原方法不支持 persist_user_timestamp，它会被 **kwargs 吞掉
                 call_kwargs = {
                     "system_message": system_message,
                     "conversation_history": conversation_history,
@@ -613,14 +645,12 @@ def _apply_direct_agent_patch() -> None:
                     "stream_callback": stream_callback,
                     "persist_user_message": persist_user_message,
                 }
-                # v1.3.0 perf: cache inspect.signature result at wrap time
-                # (the signature never changes at runtime — was ~10-50μs/message wasted)
                 if _has_persist_ts:
                     call_kwargs["persist_user_timestamp"] = persist_user_timestamp
                 call_kwargs.update(kwargs)
                 return _orig_method(self, user_message, **call_kwargs)
             finally:
-                pass  # v1.3.0: inject_time guard removed
+                pass
 
         _patched_run_conversation._hls_direct_patched = True
         AIAgent.run_conversation = _patched_run_conversation

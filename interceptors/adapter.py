@@ -1,3 +1,14 @@
+# ================================================================
+# lark-hls-v2 · interceptors/adapter.py · 总导游图（改代码前必读，读完再动手）
+# ▍这是什么（四问）
+# ① 干什么：拦截 FeishuAdapter 的 send/edit/reaction/clarify 方法，注入流式卡片逻辑
+# ② 技术栈：Python monkey-patch
+# ③ 依赖：controller（流式卡片控制）、card_flow（卡片生命周期）
+# ④ 给谁看：修改消息发送拦截逻辑或排查卡片发送问题的人
+# ▍修改铁律
+# 1. 所有拦截函数必须保存原方法引用（_orig_xxx），fallback 时调用原方法
+# 2. 拦截函数不能抛异常，必须 try/except 后 fallback 到原方法
+# ================================================================
 """FeishuAdapter interception layer — send, edit, reactions, and clarify cards."""
 
 from __future__ import annotations

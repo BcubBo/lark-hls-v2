@@ -1,4 +1,24 @@
-"""CardKit v2.0 — Card assemblers: streaming, complete, and linear cards."""
+# =================================================================
+# lark-hls-v2 · card/builder.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：卡片组装器 — 将 elements 模块的原始积木拼装成完整卡片 JSON
+# ② 技术栈：飞书 CardKit 2.0 schema，json 序列化
+# ③ 依赖：card/elements.py（所有积木函数）、card/i18n.py
+# ④ 给谁看：改卡片整体结构、调整元素组装顺序的开发者
+# ▍文件从上到下的结构
+# ① _FEISHU_ELEMENT_LIMIT / _ELEMENT_LIMIT_MARGIN — 飞书 200 元素上限常量
+# ② _enforce_card_element_limit — 超限时裁剪 panel 子元素（从头部裁，加"已折叠"提示）
+# ③ build_streaming_card_v2 — ★核心★ 流式卡片构建器，卡片生命周期的起点
+# ▍修改铁律
+# 1. build_streaming_card_v2 的元素顺序是契约 — panel → answer → loading_hint → loading_icon。
+#    改顺序会导致 card_flow.py 的 _do_unified_flush 里 element_id 定位失败。
+# 2. _enforce_card_element_limit 从头部裁剪（保留最新的推理/工具步骤），
+#    【不】改成从尾部裁 — 用户关注的是最新状态。
+# 3. streaming_config 的 print_frequency_ms/print_step/print_strategy 影响打字机效果，
+#    别随便改值，改了用户体验会变。
+# ▍更新记录
+# *更新：2026-08-13 · 添加龙崎注释风格*
+# =================================================================
 
 from __future__ import annotations
 import json
@@ -33,25 +53,38 @@ __all__ = [
     '_enforce_card_element_limit',
 ]
 
-# Feishu Card 2.0 element limit — every JSON object with a ``tag`` key
-# counts toward this limit at all nesting levels.
+# ⚠️ 飞书 Card 2.0 硬限制：所有含 tag 键的 JSON 对象（含嵌套）总数 ≤ 200。
+# 超限会报 300312 schema error，卡片完全渲染失败。
 _FEISHU_ELEMENT_LIMIT = 200
 
+# 预留 5 个元素的余量，防止 seal 时 footer/error panel 导致刚好超限
 _ELEMENT_LIMIT_MARGIN = 5
+
+
+# ================================================================
+# ▍_enforce_card_element_limit — 200 元素上限防护网
+# 从 panel 头部裁剪旧元素，保留最新内容。添加"⚡ 还有 N 项已折叠"提示。
+# ================================================================
 
 def _enforce_card_element_limit(
     card: dict[str, Any],
     *,
     panel_element_id: str = UNIFIED_PANEL_ELEMENT_ID,
 ) -> dict[str, Any]:
-    """Counts **all** tag objects in the card (including nested ones)."""
+    """_enforce_card_element_limit()：契约
+    入参：card — 完整卡片 dict；panel_element_id — 要裁剪的 panel ID
+    返回：dict — 裁剪后的卡片（原地修改 + 返回）
+    副作用：修改 card 内嵌的 panel elements 列表
+    谁调用：finalize_card() seal 阶段
+    改动影响：改裁剪策略会影响用户看到的历史推理/工具步骤数量
+    """
     threshold = _FEISHU_ELEMENT_LIMIT - _ELEMENT_LIMIT_MARGIN
     total = _count_tag_objects(card)
     if total <= threshold:
         import logging as _dbg_log
     return card
 
-    # ── Find the unified panel element in card body ──
+    # ── 定位 unified panel ──
     body = card.get("body", {})
     elements = body.get("elements", [])
     panel = None
@@ -61,26 +94,27 @@ def _enforce_card_element_limit(
             break
 
     if panel is None:
-        # No panel found — nothing to trim (answer/footer must not be trimmed)
+        # 无 panel — answer/footer 不可裁
         return card
 
     children: list[dict] = panel.get("elements", [])
 
-    # ── Check if a collapse hint already exists ──
+    # ── 检查是否已有"已折叠"提示 ──
     hint_idx = None
     for i, child in enumerate(children):
         if isinstance(child.get("content"), str) and "已折叠" in child["content"]:
             hint_idx = i
             break
     _HINT_TEMPLATE = {"tag": "markdown", "content": "⚡ 还有 0 项已折叠", "text_size": "notation"}
-    _HINT_TAG_COUNT = _count_tag_objects(_HINT_TEMPLATE)  # typically 1
+    _HINT_TAG_COUNT = _count_tag_objects(_HINT_TEMPLATE)  # 通常为 1
     if hint_idx is None:
-        total += _HINT_TAG_COUNT  # Reserve exact space for the new collapse hint
+        total += _HINT_TAG_COUNT  # 为新折叠提示预留空间
 
-    # ── Trim oldest items from panel children until under threshold ──
+    # ── 从头部裁剪直到低于阈值 ──
+    # ⚠️ 从头部裁（保留最新），【不】改成从尾部裁
     trimmed_count = 0
     while total > threshold and len(children) > 1:
-        # Skip the collapse hint (first child if it ends with "已折叠")
+        # 跳过折叠提示（如果在首位）
         first_content = children[0].get("content", "")
         remove_idx = 1 if isinstance(first_content, str) and first_content.endswith("已折叠") else 0
         removed = children.pop(remove_idx)
@@ -88,21 +122,18 @@ def _enforce_card_element_limit(
         trimmed_count += 1
 
     if trimmed_count > 0:
-        # Update or add collapse hint
-        # Re-find hint_idx (may have shifted due to removals)
+        # 更新或添加折叠提示
         hint_idx = None
         for i, child in enumerate(children):
             if isinstance(child.get("content"), str) and "已折叠" in child["content"]:
                 hint_idx = i
                 break
         if hint_idx is not None:
-            # Parse existing trimmed count from hint, then add new trimmed count
             old_hint = children[hint_idx]["content"]
-            # Extract the number before "项" — simple string parsing, no regex needed
+            # 解析已有的折叠数量，累加新裁剪数
             existing_count = 0
             _idx = old_hint.find("项")
             if _idx > 0:
-                # Walk backwards skipping whitespace, then collect digits
                 _end = _idx
                 while _end > 0 and old_hint[_end - 1] == ' ':
                     _end -= 1
@@ -120,9 +151,16 @@ def _enforce_card_element_limit(
                 "text_size": "notation",
             })
 
-    # Update panel children in the card
+    # 回写 panel children
     panel["elements"] = children
     return card
+
+
+# ================================================================
+# ▍build_streaming_card_v2 — ★核心★ 流式卡片构建器
+# 卡片生命周期 v1.0.2+：首卡创建 → 流式更新 → seal 封卡。
+# 这里只负责首卡的 JSON 结构，后续更新由 card_flow.py 的 flush 驱动。
+# ================================================================
 
 def build_streaming_card_v2(
     *,
@@ -143,10 +181,19 @@ def build_streaming_card_v2(
     card_header_icon: str = "",
     card_header_template: str = "",
 ) -> dict[str, Any]:
-    """Card lifecycle (v1.0.2+):"""
+    """build_streaming_card_v2()：契约
+    入参：各 include_* 开关控制首卡包含哪些元素；print_* 控制打字机效果
+    返回：dict — CardKit 2.0 schema 流式卡片 JSON
+    副作用：无
+    谁调用：card_flow._do_create_linear_card()
+    改动影响：
+      - 元素顺序是契约，改了 card_flow 的 element_id 定位会失败
+      - include_unified_panel=False 用于首卡（panel 在首字即显时才插入）
+      - streaming_config 影响用户看到的打字机速度
+    """
     elements: list[dict] = []
 
-    # ── Card-level header (colored banner with icon + title) ──
+    # ── 卡片级 header（彩色横幅 + 图标 + 标题）──
     header: dict[str, Any] | None = None
     if include_card_header:
         try:
@@ -158,17 +205,17 @@ def build_streaming_card_v2(
                 template=card_header_template or _def.CARD_HEADER_TEMPLATE,
             )
         except Exception:
-            pass  # Graceful degradation — card works without header
+            pass  # 优雅降级 — 没有 header 卡片也能用
 
-    # ── Unified panel placeholder (linear mode — single panel for reasoning+tools) ──
+    # ── Unified panel 占位（linear 模式 — reasoning+tools 共用一个 panel）──
     if include_unified_panel:
         elements.append(_build_unified_panel_placeholder(expanded=streaming_panel_expanded))
 
-    # ── Streaming answer element ──
+    # ── 流式回答元素 ──
     if show_streaming_element and include_answer_element:
         elements.append(_streaming_element(element_id=ANSWER_ELEMENT_ID))
 
-    # ── Loading hint (context loading placeholder, removed on first LLM token) ──
+    # ── Loading hint（"正在加载上下文..."，首字即显时删除）──
     if include_loading_hint:
         elements.append(_loading_hint_element())
 
@@ -192,7 +239,7 @@ def build_streaming_card_v2(
         },
         "body": {"elements": elements},
     }
-    # ── Inject card-level header (colored banner) ──
+    # ── 注入卡片级 header（彩色横幅）──
     if header is not None:
         card["header"] = header
     return card

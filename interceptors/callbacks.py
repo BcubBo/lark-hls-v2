@@ -1,5 +1,31 @@
 """Callback wrapping for AIAgent streaming callbacks."""
 
+# ================================================================
+# lark-hls-v2 · interceptors/callbacks.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：替换 AIAgent 上的 5 个流式回调（answer/thinking/tool/reasoning/
+#    background_review），在原始回调基础上叠加 HLS 卡片更新逻辑。
+#    核心入口是 _maybe_wrap_callbacks(agent)。
+# ② 技术栈：闭包 + 函数替换，纯 Python。
+# ③ 依赖：interceptors/hooks.py（on_answer_delta 等）、_msg_ctx（context var）。
+# ④ 给谁看：interceptors/gateway.py（_wrap_run_conversation 调用它）。
+# ▍结构
+# _resolve_eid() — 重新解析当前 event_message_id（防止 stale eid）
+# _maybe_wrap_callbacks(agent) — 主入口，按顺序包装 5 个回调：
+#   stream_delta_callback → _answer_wrapper（answer 增量）
+#   interim_assistant_callback → _thinking_wrapper（thinking 增量，含去重）
+#   tool_progress_callback → _tool_wrapper（工具事件）
+#   reasoning_callback → _reasoning_wrapper（推理增量）
+#   background_review_callback → _bg_wrapper（后台 review）
+# ▍修改铁律
+# 1. _hls_wrapper 标志防止重复包装 — 如果回调已被 HLS 包装过就跳过。
+#    删除这个检查会导致无限递归。
+# 2. _stream_consumed_len 用于 thinking/answer 去重：当 thinking 回调的文本
+#    长度 <= 已消费长度时，说明是重复投递，直接透传给原始回调。
+#    改了这个逻辑会导致 thinking 文本重复出现在卡片上。
+# 3. 已包装的回调仍会调用原始回调（_orig_stream 等），确保非飞书路径不受影响。
+# ================================================================
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,10 +37,12 @@ from . import (
     _get_event_message_id,
 )
 
+
 def _resolve_eid(fallback_eid: str | None) -> str | None:
     """Re-resolve the current event_message_id from _msg_ctx at call time."""
     _eid = _get_event_message_id()
     return _eid if _eid else fallback_eid
+
 
 def _maybe_wrap_callbacks(agent) -> None:
     """Replace streaming callbacks on *agent* with wrappers that also fire
@@ -62,6 +90,7 @@ def _maybe_wrap_callbacks(agent) -> None:
         """Remove consumed-length tracking for a completed message."""
         _stream_consumed_len.pop(_eid, None)
 
+    # ▍stream_delta_callback 包装 — answer 增量
     if getattr(agent, "stream_delta_callback", None):
         _orig_stream = agent.stream_delta_callback
 
@@ -105,6 +134,7 @@ def _maybe_wrap_callbacks(agent) -> None:
         agent.stream_delta_callback = _answer_wrapper_synthetic
         setattr(agent.stream_delta_callback, "_hls_wrapper", True)
 
+    # ▍interim_assistant_callback 包装 — thinking 增量（含去重逻辑）
     if getattr(agent, "interim_assistant_callback", None):
         _orig_interim = agent.interim_assistant_callback
 
@@ -143,7 +173,7 @@ def _maybe_wrap_callbacks(agent) -> None:
     else:
         _logger.debug("HLS: _maybe_wrap_callbacks NO interim_assistant_callback on agent")
 
-    # ── TOOL: wrap tool_progress_callback ──
+    # ▍tool_progress_callback 包装 — 工具事件
     if getattr(agent, "tool_progress_callback", None):
         _orig_tool = agent.tool_progress_callback
 
@@ -175,7 +205,7 @@ def _maybe_wrap_callbacks(agent) -> None:
     if getattr(agent, "tool_progress_callback", None):
         setattr(agent.tool_progress_callback, "_hls_wrapper", True)
 
-    # ── REASONING: wrap reasoning_callback ──
+    # ▍reasoning_callback 包装 — 模型原生推理增量
     _orig_reasoning = getattr(agent, "reasoning_callback", None)
 
     def _reasoning_wrapper(text, *args, **kwargs):
@@ -198,7 +228,7 @@ def _maybe_wrap_callbacks(agent) -> None:
     agent.reasoning_callback = _reasoning_wrapper
     setattr(agent.reasoning_callback, "_hls_wrapper", True)
 
-    # ── BACKGROUND_REVIEW: wrap background_review_callback ──
+    # ▍background_review_callback 包装 — 后台 review 消息
     if getattr(agent, "background_review_callback", None):
         _orig_bg = agent.background_review_callback
 

@@ -1,4 +1,24 @@
-"""与 openclaw-lark UnavailableGuard 对齐."""
+# =================================================================
+# lark-hls-v2 · feishu/guard.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：检测飞书消息被删除/撤回后终止 reply pipeline，避免对已消失的消息继续更新卡片。
+#    维护一个线程安全的 unavailable 缓存，记录哪些 message_id 已知不可用。
+# ② 技术栈：Python 3.11, threading.Lock, re
+# ③ 依赖：feishu.client.MSG_NOT_FOUND（错误码常量）
+# ④ 给谁看：调试 pipeline 意外终止、修改消息生命周期判断逻辑的开发者。
+# ▍文件从上到下的结构
+# 缓存区      — _unavailable_cache + TTL + 修剪阈值
+# 缓存操作    — _prune_cache / mark_unavailable / is_unavailable / _get_cached_code
+# 错误码判断  — extract_api_code / is_terminal_api_code
+# UnavailableGuard 类 — ★本文件核心★，pipeline 终止守卫
+# ▍修改铁律
+# 1. _TERMINAL_MESSAGE_CODES 里的码是"消息已死"的终态，加新码前确认飞书文档说它是终态。
+# 2. _get_cached_code 用 is-None 检查而非 or —— code=0 是合法错误码，or 会吞掉它。
+# 3. _PRUNE_THRESHOLD=50 是性能优化阈值，改小会频繁清理，改大会内存膨胀。
+# ▍外号表
+# "guard"   → UnavailableGuard（pipeline 终止守卫）
+# "cache"   → _unavailable_cache（消息不可用状态的内存缓存）
+# =================================================================
 
 from __future__ import annotations
 
@@ -13,6 +33,7 @@ from .client import MSG_NOT_FOUND
 
 _logger = logging.getLogger("lark_hls_v2")
 
+# 消息终端码 — 收到这些码说明消息已死（删除/撤回），pipeline 应立即终止
 _TERMINAL_MESSAGE_CODES = {
     231003,  # message deleted
     MSG_NOT_FOUND,
@@ -20,9 +41,10 @@ _TERMINAL_MESSAGE_CODES = {
 }
 
 _unavailable_cache: dict[str, dict[str, Any]] = {}
+# "cache" — 消息不可用状态的内存缓存，key=message_id
 _unavailable_cache_lock = threading.Lock()
-_UNENHANCED_CACHE_TTL_SEC = 30 * 60  # 30 分钟 TTL
-# v1.3.0 perf: prune only when cache exceeds this threshold, instead of on
+_UNENHANCED_CACHE_TTL_SEC = 30 * 60  # 30 分钟 TTL，改了会怎样：TTL 过短 → 重复请求已死消息；过长 → 内存占用
+# 修剪阈值：只在缓存超过此值时才清理，避免每次操作都遍历
 _PRUNE_THRESHOLD = 50
 
 def _prune_cache() -> None:
@@ -33,7 +55,7 @@ def _prune_cache() -> None:
         _unavailable_cache.pop(k, None)
 
 def mark_unavailable(message_id: str, code: int, operation: str = "") -> None:
-    """标记消息为不可用."""
+    """mark_unavailable(): 标记消息为不可用，写入缓存（线程安全）."""
     with _unavailable_cache_lock:
         _unavailable_cache[message_id] = {
             "code": code,
@@ -42,7 +64,7 @@ def mark_unavailable(message_id: str, code: int, operation: str = "") -> None:
         }
 
 def is_unavailable(message_id: str | None) -> bool:
-    """检查消息是否已知不可用."""
+    """is_unavailable(): 检查消息是否已知不可用，超阈值时自动触发 prune."""
     if not message_id:
         return False
     with _unavailable_cache_lock:
@@ -61,7 +83,7 @@ def _get_cached_code(message_id: str | None) -> int | None:
 _RE_API_CODE = re.compile(r"code[=:]\s*(\d+)")
 
 def extract_api_code(err: Exception | None) -> int | None:
-    """从异常中提取 API 错误码."""
+    """extract_api_code(): 从异常中提取 API 错误码，支持 .code 属性和字符串正则匹配."""
     if err is None:
         return None
     if hasattr(err, "code"):
@@ -78,11 +100,14 @@ def extract_api_code(err: Exception | None) -> int | None:
     return None
 
 def is_terminal_api_code(code: int | None) -> bool:
-    """判断错误码是否为消息终端码."""
+    """is_terminal_api_code(): 判断错误码是否为消息终端码（删除/撤回/不存在）."""
     return code is not None and code in _TERMINAL_MESSAGE_CODES
 
 class UnavailableGuard:
-    """检测消息被删除/撤回后终止 pipeline."""
+    """★本文件核心★ UnavailableGuard: 检测消息被删除/撤回后终止 reply pipeline.
+    谁调用：pipeline 主循环在每次 flush 前调 should_skip()，API 报错时调 terminate().
+    改了会怎样：去掉 guard → 对已死消息持续更新卡片，浪费 API 调用且可能报错.
+    """
 
     def __init__(
         self,
@@ -96,7 +121,7 @@ class UnavailableGuard:
         self._terminated = False
 
     def should_skip(self, source: str) -> bool:
-        """检查是否应跳过当前操作."""
+        """should_skip(): 检查是否应跳过当前操作 —— 已终止或 reply_to 消息已不可用."""
         if self._terminated:
             return True
         if not self._reply_to_message_id:
@@ -106,7 +131,9 @@ class UnavailableGuard:
         return False
 
     def terminate(self, source: str, err: Exception | None = None) -> bool:
-        """返回 True 表示已终止（或早已终止）."""
+        """terminate(): 尝试终止 pipeline，仅在错误码是终态时才真正终止.
+        返回 True 表示已终止（或早已终止），False 表示错误不是终态，pipeline 继续.
+        """
         if self._terminated:
             return True
 

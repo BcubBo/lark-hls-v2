@@ -1,7 +1,32 @@
 """On registration: backs up config.yaml (timestamped), injects clean defaults."""
 
-from __future__ import annotations
+# ================================================================
+# lark-hls-v2 · plugin/__init__.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：插件注册入口。Hermes 发现插件后调用 register(ctx)：
+#    备份 config.yaml → 注入默认配置 → 应用 monkey-patches → 预热飞书客户端 →
+#    注册 /aowen 命令钩子。unregister(ctx) 负责清理。
+# ② 技术栈：yaml + asyncio + pathlib，纯 Python。
+# ③ 依赖：config/defaults.py（默认值常量）、interceptors/apply_patches()、
+#    controller.py（get_controller）、aowen/（/aowen 钩子）。
+# ④ 给谁看：Hermes 插件系统（调用 register/unregister）、运维人员。
+# ▍结构
+# _DEFAULT_STREAMING_CONFIG — 默认流式配置 dict（从 defaults.py 组装）
+# _backup_config() — 首次安装时备份 config.yaml（带时间戳）
+# _ensure_streaming_config() — 注入 lark_hls_v2 段到 config.yaml
+# _cleanup_config() — 卸载时清除 lark_hls_v2 段
+# register(ctx) — 主入口：配置注入 → apply_patches → 预热 → 注册钩子
+# unregister(ctx) — 清理入口
+# ▍修改铁律
+# 1. register() 是插件加载三要素之一（__init__.py 导出 register），
+#    改了函数签名或不导出会导致插件无法加载（静默失败）。
+# 2. _ensure_streaming_config() 会用 yaml.dump 写 config.yaml，
+#    可能丢失注释和格式（已知限制）。
+# 3. _backup_config() 只在首次安装时备份（检查是否已有备份文件），
+#    重复安装不会覆盖旧备份。
+# ================================================================
 
+from __future__ import annotations
 import logging
 import os
 import shutil
@@ -35,6 +60,7 @@ _logger = logging.getLogger("lark_hls_v2")
 
 _PLUGIN_NAME = "lark-hls-v2"
 
+# ▍默认流式配置 — 从 defaults.py 常量组装，注入到 config.yaml 的 lark_hls_v2 段
 _DEFAULT_STREAMING_CONFIG: dict[str, Any] = {
     "panel_expanded": PANEL_EXPANDED,
     "streaming_panel_expanded": STREAMING_PANEL_EXPANDED,
@@ -58,6 +84,7 @@ def _get_hermes_config_path() -> Path:
 
 
 def _backup_config() -> None:
+    """首次安装时备份 config.yaml（带时间戳后缀，只备份一次）."""
     config_path = _get_hermes_config_path()
     if not config_path.exists():
         return
@@ -77,6 +104,7 @@ def _backup_config() -> None:
 
 
 def _prepare_config(cfg: dict[str, Any]) -> dict[str, Any]:
+    """深拷贝配置 dict（递归）."""
     result: dict[str, Any] = {}
     for k, v in cfg.items():
         if isinstance(v, dict):
@@ -87,10 +115,10 @@ def _prepare_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ensure_streaming_config() -> None:
+    """注入 lark_hls_v2 默认配置段到 config.yaml（如果不存在）."""
     config_path = _get_hermes_config_path()
     if not config_path.exists():
         return
-
     try:
         text = config_path.read_text(encoding="utf-8")
         raw = yaml.safe_load(text) or {}
@@ -118,6 +146,7 @@ def _ensure_streaming_config() -> None:
 
 
 def _cleanup_config() -> None:
+    """卸载时清除 config.yaml 中的 lark_hls_v2 段和 plugins.enabled 条目."""
     config_path = _get_hermes_config_path()
     if not config_path.exists():
         return
@@ -142,6 +171,13 @@ def _cleanup_config() -> None:
 
 
 def register(ctx: "PluginContext") -> None:
+    """register()：契约
+    入参：ctx（PluginContext）— Hermes 插件上下文
+    返回：无
+    副作用：修改 config.yaml、应用 monkey-patches、预热飞书客户端、注册 /aowen 钩子
+    谁调用：Hermes 插件系统（启动时）
+    改动影响：这是插件加载三要素之一，不导出或签名变了会导致插件不加载
+    """
     _ensure_streaming_config()
 
     _logger.info("lark-hls-v2 v%s: applying runtime patches...", __version__)
@@ -178,6 +214,13 @@ def register(ctx: "PluginContext") -> None:
 
 
 def unregister(ctx: "PluginContext") -> None:
+    """unregister()：契约
+    入参：ctx（PluginContext）— Hermes 插件上下文
+    返回：无
+    副作用：清除 config.yaml 中的 lark_hls_v2 配置、清空 session
+    谁调用：Hermes 插件系统（卸载时）
+    改动影响：不影响运行中的 gateway（需要重启才生效）
+    """
     _cleanup_config()
     try:
         from ..controller import get_controller

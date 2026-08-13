@@ -1,8 +1,27 @@
-"""Type-safe config reader for lark-hls-v2 v2.
-
-Reads from Hermes config.yaml under the ``lark_hls_v2`` section.
-All fallback values come from :mod:`config.defaults` — the single source of truth.
-"""
+# =================================================================
+# lark-hls-v2 · config/schema.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：从 Hermes config.yaml 读取 lark_hls_v2 配置节，提供类型安全的属性访问。
+#    所有 fallback 值来自 config.defaults —— 唯一的默认值真相源。
+# ② 技术栈：Python 3.11, yaml, threading.Lock
+# ③ 依赖：config.defaults（默认值模块），Hermes config.yaml（磁盘配置）
+# ④ 给谁看：修改配置项、新增配置字段的开发者。
+# ▍文件从上到下的结构
+# Helpers 区        — _to_bool/_to_int/_to_float 类型转换，_get_hermes_config_path 路径定位
+# Config 单例类     — lazy-read 单例，__new__ 控制唯一实例，__init__ 只跑一次
+#   属性(property)  — 每个配置项一个 @property，读 YAML → 转类型 → clamp → 返回
+#   内部方法        — _plugin_sec / _platform_cfg / _load / _reload_cached / _read_yaml
+# ▍修改铁律
+# 1. 新增配置项必须同时在 config/defaults.py 写默认值，否则 fallback 行为不可预测。
+# 2. _to_int/_to_float 的 clamp 范围是硬编码的（如 max(1, 100)），改范围前先确认上游不会炸。
+# 3. _reload_cached 有 TTL 缓存（RELOAD_CACHE_TTL），runtime-mutable 属性走这条路；
+#    非 runtime 属性走 _load（只读一次）。别混用，否则热更新不生效。
+# 4. _platform_cfg 优先读环境变量（FEISHU_APP_ID / LARK_APP_ID），再读 config.yaml。
+#    改优先级会影响部署方式，先和运维确认。
+# ▍外号表
+# "plugin_sec"   → _plugin_sec()（从 raw YAML 取 lark_hls_v2 节）
+# "reload_cache" → _reload_cached()（TTL 缓存的磁盘重读，给 runtime-mutable 属性用）
+# =================================================================
 
 from __future__ import annotations
 
@@ -20,9 +39,10 @@ from . import defaults
 
 _logger = logging.getLogger("lark_hls_v2")
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# =================================================================
+# Helpers — 类型安全转换 + 路径定位
+# 改了会怎样：_to_bool 逻辑变了，所有 bool 配置项的行为都会跟着变
+# =================================================================
 
 def _get_hermes_config_path() -> Path:
     """Hermes config.yaml location (honors HERMES_HOME)."""
@@ -30,6 +50,7 @@ def _get_hermes_config_path() -> Path:
 
 
 def _to_bool(val: Any, default: bool = False) -> bool:
+    """_to_bool(): 宽松布尔转换，接受 bool/str/int/float，其余返回 default."""
     if isinstance(val, bool):
         return val
     if isinstance(val, str):
@@ -40,6 +61,7 @@ def _to_bool(val: Any, default: bool = False) -> bool:
 
 
 def _to_int(val: Any, default: int) -> int:
+    """_to_int(): 宽松整数转换，bool 也转（True→1），溢出/格式错返回 default."""
     if isinstance(val, bool):
         return int(val)
     if isinstance(val, int):
@@ -77,9 +99,10 @@ def _to_float(val: Any, default: float) -> float:
     return default
 
 
-# ---------------------------------------------------------------------------
-# Config singleton
-# ---------------------------------------------------------------------------
+# =================================================================
+# Config 单例 — lazy-read，线程安全，reload() 清缓存重新读磁盘
+# 为什么用单例：整个插件只需要一份配置，多实例会导致缓存不一致
+# =================================================================
 
 class Config:
     """Plugin configuration. Lazy-reading singleton.
@@ -90,6 +113,7 @@ class Config:
     _instance: Config | None = None
 
     def __new__(cls) -> Config:
+        """__new__(): 单例控制 —— 只创建一次实例，后续调用返回同一个对象."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -115,6 +139,8 @@ class Config:
         _logger.info("HLS v2: config reload triggered — caches cleared")
 
     # -- Plugin section properties -------------------------------------------
+    # 这些属性从 lark_hls_v2 配置节读取，每个都有 defaults fallback
+    # 改了会怎样：属性的 clamp 范围变了，用户配置的极端值会被截断到新范围
 
     @property
     def enabled(self) -> bool:
@@ -273,6 +299,8 @@ class Config:
         return float(header.get("dynamic_quotes_cooldown", defaults.DYNAMIC_QUOTES_COOLDOWN))
 
     # -- Runtime-mutable (TTL-cached reads) ----------------------------------
+    # 这些属性走 _reload_cached（有 TTL），支持热更新不重启
+    # 为什么单独一路：普通属性只读一次就够了，但 show_reasoning 等需要运行时改
 
     @property
     def show_reasoning(self) -> bool:
@@ -323,12 +351,13 @@ class Config:
     # -- Internal helpers ----------------------------------------------------
 
     def _plugin_sec(self) -> dict[str, Any]:
+        """_plugin_sec(): 从 raw YAML 取 lark_hls_v2 节，不存在返回空 dict."""
         raw = self._load()
         sec = raw.get("lark_hls_v2")
         return sec if isinstance(sec, dict) else {}
 
     def _platform_cfg(self) -> dict[str, Any]:
-        """Feishu credentials from env vars or config."""
+        """_platform_cfg(): 飞书凭证查找链：环境变量 > config.yaml feishu 节 > config.yaml lark 节."""
         if self.env_app_id and self.env_app_secret:
             base_url = (
                 os.environ.get("FEISHU_BASE_URL")
@@ -354,6 +383,7 @@ class Config:
         return {}
 
     def _load(self) -> dict[str, Any]:
+        """_load(): 线程安全的懒加载，只读一次磁盘，后续走内存缓存."""
         with self._lock:
             if self._raw is not None:
                 return self._raw
@@ -361,7 +391,9 @@ class Config:
             return self._raw
 
     def _reload_cached(self) -> dict[str, Any]:
-        """TTL-cached disk re-read for runtime-mutable settings."""
+        """_reload_cached(): TTL 缓存的磁盘重读，给 runtime-mutable 属性用（如 show_reasoning）。
+        改了会怎样：TTL 过短 → 频繁磁盘 IO；TTL 过长 → 热更新延迟变大。
+        """
         now = time.monotonic()
         with self._lock:
             if self._reload_cache is not None and (now - self._reload_cache_at) < defaults.RELOAD_CACHE_TTL:

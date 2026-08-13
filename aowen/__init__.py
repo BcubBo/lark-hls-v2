@@ -1,3 +1,14 @@
+# ================================================================
+# lark-hls-v2 · aowen/__init__.py · 总导游图（改代码前必读，读完再动手）
+# ▍这是什么（四问）
+# ① 干什么：/aowen 命令系统，提供 help/status/monitor/config reload 等管理命令
+# ② 技术栈：纯 Python，无外部依赖
+# ③ 依赖：controller（获取卡片状态）、config（重载配置）
+# ④ 给谁看：新增 /aowen 子命令或排查命令问题的人
+# ▍修改铁律
+# 1. 新增命令必须注册到 COMMAND_MAP，否则用户输入无响应
+# 2. 命令函数签名统一 (args: list[str], ctx: dict) -> str
+# ================================================================
 """Commands: help, status, monitor, monitor reset, config reload. Bypasses Hermes AI"""
 
 from __future__ import annotations

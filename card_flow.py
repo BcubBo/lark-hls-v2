@@ -1,7 +1,42 @@
-"""Unified panel linear mode — create, flush, and seal a single-card streaming session.
-
-v2 fork: 从原版 card_flow.py (1229行) 提取，适配 v2 的模块结构。
-"""
+# ================================================================
+# lark-hls-v2 · card_flow.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么（四问）
+# ① 干什么：流式卡片的"一生" — 创建占位卡、分阶段刷入内容（推理/工具/回答）、封卡。被 mixin 到 controller 使用。
+# ② 技术栈：asyncio + 飞书 CardKit 2.0 batch_update / stream_element / close_streaming API。
+# ③ 依赖：card/（builder/elements/md）、state/（session/linear/phase/text/tooluse）、feishu 客户端。
+# ④ 给谁看：改卡片流式逻辑、修 flush 时序、排查封卡 bug 的人。
+#
+# ▍文件从上到下的结构
+# 常量 + 导入（状态 IDLE~ABORTED、drain 参数）
+# _build_seal_summary() — 封卡摘要构建
+# _fallback_write_answer() — stream_element 失败时的降级写入
+# UnifiedControllerMixin — ★核心 Mixin 类★，被 StreamCardController 继承
+#   ├─ _get_dynamic_quote / _get_panel_quote — 动态标题语录
+#   ├─ _do_create_linear_card() — 创建初始占位卡 → 首字即显
+#   ├─ _schedule_linear_flush() — 调度节流 flush
+#   ├─ _do_unified_flush() — ★核心★ 统一 flush：Phase 2（创建元素）→ Phase 3（更新元素）→ stream answer
+#   ├─ _upgrade_loading_hint_to_thinking() — loading 文案升级
+#   ├─ _linear_on_thinking() — thinking/reasoning 增量处理
+#   ├─ _finalize_card() — ★核心★ 封卡：drain dirty → 更新面板 → 加 footer → close_streaming
+#   └─ _complete_card_flow() — ★核心★ 完成流程：drain → mark_completed → finalize
+#
+# ▍修改铁律（血泪教训）
+# 1. sequence 必须单调递增，飞书拒绝回退 — 每次 API 调用前 session.sequence += 1。
+# 2. dirty 标志只在 API 成功后清除 — 失败时保留以便下轮 flush 重试。
+# 3. streaming_closed 是单向开关 — 一旦为 True 不可逆，后续 flush 直接 return。
+# 4. 首字即显（_first_flush_done）用 fire-and-forget，必须持有 Task 强引用防 GC。
+# 5. CancelledError 是 BaseException 子类 — except Exception 抓不到它，需要单独处理。
+# 6. 封卡前必须 drain 所有 dirty 数据，否则 footer 出现在内容前面。
+# 7. close_streaming 只能调一次 — 重复调用会 300309 报错。
+# 8. phase 2 和 phase 3 的区别：phase 2 创建新元素，phase 3 更新已有元素。
+#
+# ▍特殊机制
+# "三阶段 flush"：Phase 2 创建 panel+answer 元素 → Phase 3 更新 panel → stream answer 文本。
+# 每个 phase 最多 2 个 API 调用（batch_update + stream_element）。
+#
+# ▍更新记录
+# *v2 fork: 从原版 card_flow.py (1229行) 提取，适配 v2 的模块结构*
+# ================================================================
 
 from __future__ import annotations
 
@@ -31,6 +66,7 @@ from .state.text import split_reasoning_text
 from .card.quotes import QuoteManager
 
 # Module-level singleton for dynamic quotes
+# ▍动态语录单例 — 卡片 header 和 panel 标题的动漫台词
 _quote_manager: QuoteManager | None = None
 
 def _get_quote_manager() -> QuoteManager:
@@ -70,8 +106,9 @@ if TYPE_CHECKING:
 _logger = logging.getLogger("lark_hls_v2")
 
 # Drain-loop limits for final flush before seal
-_DRAIN_ROUNDS_MAX: int = 8
-_DRAIN_YIELD_SEC: float = 0.020  # 20ms yield — enough for worker thread callbacks
+# ▍drain-loop 参数 — 封卡前刷尽 dirty 数据的重试配置
+_DRAIN_ROUNDS_MAX: int = 8        # 最多 8 轮 drain（实际很少超过 2 轮）
+_DRAIN_YIELD_SEC: float = 0.020   # 20ms 让出 — 给 worker 线程回调时间
 
 
 def _build_seal_summary(state: UnifiedLinearState | None) -> str:
@@ -703,7 +740,21 @@ class UnifiedControllerMixin:
         footer_fields: list[list[str]] | None = None,
         footer_show_label: bool = False,
     ) -> bool:
-        """Finalize card — flush dirty data, update panel, add footer, close streaming."""
+        """_finalize_card(): 契约 — ★核心★
+        入参: session, partial, footer_data, is_error, is_aborted, error_message, footer_fields, footer_show_label
+        返回: bool — True 封卡成功 / False 失败
+        副作用:
+          - drain 所有 dirty 数据 (panel + answer)
+          - 更新面板到终态 (current_reasoning_text 清空)
+          - 优化 answer markdown (_downgrade_tables + optimize_markdown_style)
+          - 添加 footer / error panel / bg_review panel
+          - 调用 close_streaming 关闭流式模式
+        谁调用: _complete_card_flow()
+        改动影响:
+          - ⚠️ close_streaming 只能调一次 — 重复会 300309
+          - sequence 冲突会自动重试 2 次
+          - 元素数超 200 会自动裁剪 panel children (从头部删除旧项)
+        """
         assert self._client is not None
         card_id = session.card_id
         assert card_id is not None
@@ -1100,7 +1151,18 @@ class UnifiedControllerMixin:
             return False
 
     async def _complete_card_flow(self, session: CardSession) -> bool:
-        """Complete the card with the unified panel architecture."""
+        """_complete_card_flow(): 契约 — ★核心★
+        入参: session (CardSession)
+        返回: bool — True 完成 / False 失败
+        副作用:
+          - drain dirty 数据 (最多 8 轮，每轮间隔 20ms)
+          - mark_completed 停止后续 flush
+          - 调用 _finalize_card 封卡
+          - 释放重数据 (_reset_session_state)
+          - 记录 metrics (record_card_completed / record_card_failed)
+        谁调用: _dispatch_completion() -> _complete_with_fallback()
+        改动影响: drain 不净时 finalize_card 会兜底再 flush 一次
+        """
         if session.guard.should_skip("_complete_card_flow"):
             return False
 

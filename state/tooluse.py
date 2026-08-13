@@ -1,4 +1,30 @@
-"""工具调用追踪与可视化 — 与 openclaw-lark 工具展示对齐."""
+# ================================================================
+# lark-hls-v2 state/tooluse.py -- 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：工具调用追踪与可视化。ToolStep 记录单次工具调用，ToolSession 管理会话，
+#    ToolUseTracker 按 session 隔离追踪。与 openclaw-lark 工具展示对齐。
+# ② 技术栈：Python 3.11+ / dataclasses / re / json
+# ③ 依赖：无外部依赖
+# ④ 给谁看：维护 lark-hls-v2 的开发者，理解工具调用的追踪、脱敏和卡片渲染。
+# ▍文件从上到下的结构
+# ToolStep / ToolSession: 数据类
+# redact_inline_secrets(): 脱敏 key=secret / Authorization header / --flag secret
+# _sanitize_detail(): 按 sanitizer 类型清洗 detail 文本
+# _redact_paths / _basename_only: 路径脱敏
+# _TOOL_DESCRIPTORS: 工具名称 -> 图标/标题/脱敏器映射表
+# _resolve_tool_descriptor(): 解析工具描述符
+# ToolUseTracker: 按 session 隔离的工具调用追踪器
+# _build_display_block / _fenced_block: 构建 markdown 代码围栏
+# ▍修改铁律
+# 1. _SENSITIVE_NAME_RE 的模式【不】删掉任何关键词，改了会导致敏感信息泄露到卡片。
+# 2. redact_inline_secrets 的三阶段脱敏链（assign -> auth_header -> flag）【不】调换顺序，
+#    改了会导致某些模式漏脱敏。
+# 3. _TOOL_DESCRIPTORS 的 aliases 必须用下划线格式（如 web_search），【不】用连字符，
+#    改了会导致工具名称匹配失败。
+# 4. record_end 通过名字倒序匹配 running 步骤，【不】改成正序，改了会导致同名嵌套工具匹配错误。
+# ================================================================
+
+"""工具调用追踪与可视化 -- 与 openclaw-lark 工具展示对齐."""
 
 from __future__ import annotations
 
@@ -29,8 +55,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+# ▍数据类
+
 @dataclass
 class ToolStep:
+    """单次工具调用的状态记录。"""
     name: str
     status: str  # running | success | error
     detail: str = ""
@@ -43,8 +72,11 @@ class ToolStep:
 
 @dataclass
 class ToolSession:
+    """单个会话的工具调用列表。"""
     steps: list[ToolStep] = field(default_factory=list)
     started_at: float | None = None
+
+# ▍脱敏正则 -- 改了会导致敏感信息泄露到卡片
 
 _SENSITIVE_NAME_RE = re.compile(
     r"token|secret|password|api[_-]?key|authorization|cookie|credential"
@@ -52,17 +84,21 @@ _SENSITIVE_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
-_INLINE_ASSIGNMENT_RE = re.compile(r'(^|[\s"\'`])([A-Za-z_][A-Za-z0-9_]*)(=(?:"[^"]*"|\'[^\']*\'|[^\s"\'`]+))')
+_INLINE_ASSIGNMENT_RE = re.compile(r'(^|[\s"\'`])([A-Za-z_][A-Za-z0-9_]*)(=(?:"[^"]*"|\'[^\']*\'|[^\\s"\'`]+))')
 _AUTH_HEADER_RE = re.compile(
-    r"(Authorization\s*:\s*(?:Bearer|Basic|Token)\s+)([^\'\"\s]+)",
+    r"(Authorization\s*:\s*(?:Bearer|Basic|Token)\s+)([^\\'\"\s]+)",
     re.IGNORECASE,
 )
 _SECRET_FLAG_RE = re.compile(
-    r'((?:^|[\s"\'`])(--?[A-Za-z0-9][A-Za-z0-9-]*)(=|\s+)("(?:[^"]*)"|\'(?:[^\']*)\'|[^\s"\'`]+))'
+    r'((?:^|[\s"\'`])(--?[A-Za-z0-9][A-Za-z0-9-]*)(=|\s+)("(?:[^"]*)"|\'(?:[^\']*)\'|[^\\s"\'`]+))'
 )
 
+# ▍脱敏函数
+
 def redact_inline_secrets(value: str) -> str:
-    """脱敏 key=secret、Authorization header、--flag secret 模式."""
+    """脱敏 key=secret、Authorization header、--flag secret 模式。
+    三阶段链式脱敏，【不】调换顺序。
+    """
 
     def _redact_assign(m: re.Match) -> str:
         key = str(m.group(2))
@@ -82,7 +118,9 @@ def redact_inline_secrets(value: str) -> str:
     )
 
 def _sanitize_detail(text: str, sanitizer: str | None) -> str:
-    """根据 sanitizer 类型清洗 detail 文本."""
+    """根据 sanitizer 类型清洗 detail 文本。
+    command -> 脱敏 + 路径 basename，path -> basename，search/url -> 去引号。
+    """
     if not text or not sanitizer:
         return text
     cleaned = re.sub(r"<[^>]+>", "", text).strip()
@@ -102,7 +140,7 @@ def _sanitize_detail(text: str, sanitizer: str | None) -> str:
     return cleaned
 
 def _redact_paths(text: str) -> str:
-    """命令中路径只保留 basename."""
+    """命令中路径只保留 basename。"""
     return re.sub(
         r'(^|[\s=\'"()])([~./][^\s\'"()]+)',
         lambda m: f"{m.group(1)}{os.path.basename(m.group(2))}",
@@ -113,6 +151,8 @@ def _basename_only(text: str) -> str:
     if not text:
         return text
     return os.path.basename(text.replace("\\", "/").rstrip("/"))
+
+# ▍工具描述符映射表 -- aliases 必须用下划线格式
 
 _TOOL_DESCRIPTORS: list[dict[str, Any]] = [
     {"aliases": ["skill"], "icon": "app-default_outlined", "title": "Load skill", "sanitizer": None},
@@ -163,6 +203,7 @@ _TOOL_DESCRIPTORS: list[dict[str, Any]] = [
 ]
 
 def _resolve_tool_descriptor(name: str | None) -> dict[str, Any] | None:
+    """按别名匹配工具描述符。"""
     if not name:
         return None
     normalized = name.strip().lower().replace("-", "_")
@@ -181,13 +222,15 @@ def _humanize_tool_name(name: str) -> str:
 def _format_duration_label(ms: float) -> str:
     return f"{ms:.0f} ms" if ms < 1000 else f"{(ms / 1000):.1f} s"
 
+# ▍显示块构建
+
 def _build_display_block(
     value: Any,
     fallback_lang: str = "json",
     *,
     sanitizer: str | None = None,
 ) -> dict[str, Any] | None:
-    """构建结果/错误的显示块 — 返回 {language, content, fenced} 含 markdown 代码围栏."""
+    """构建结果/错误的显示块 -- 返回 {language, content, fenced} 含 markdown 代码围栏。"""
     if value is None:
         return None
     if isinstance(value, str):
@@ -216,8 +259,12 @@ def _fenced_block(language: str, content: str) -> dict[str, Any]:
     fence = "`" * max(3, max((len(m) for m in re.findall(r"`+", content)), default=0) + 1)
     return {"language": language, "content": content, "fenced": f"{fence}{language}\n{content}\n{fence}"}
 
+# ▍ToolUseTracker -- 按 session 隔离的工具调用追踪器
+
 class ToolUseTracker:
-    """按 session 隔离，每个会话独立生命周期."""
+    """按 session 隔离，每个会话独立生命周期.
+    max_steps 限制防止工具调用过多导致卡片渲染卡顿。
+    """
 
     def __init__(self, max_steps: int = 128) -> None:
         self._session: ToolSession | None = None
@@ -230,6 +277,7 @@ class ToolUseTracker:
         return (time.time() - self._session.started_at) * 1000
 
     def record_start(self, name: str, detail: str = "") -> None:
+        """记录工具调用开始。"""
         if self._session is None:
             self._session = ToolSession(started_at=time.time())
         if len(self._session.steps) >= self._max_steps:
@@ -244,7 +292,9 @@ class ToolUseTracker:
         )
 
     def record_end(self, name: str, *, error: str = "", output: str = "") -> None:
-        """通过名字匹配最近的一个 running 步骤来结束."""
+        """通过名字倒序匹配最近的一个 running 步骤来结束。
+        【不】改成正序匹配，改了会导致同名嵌套工具匹配错误。
+        """
         if self._session is None:
             return
         desc = _resolve_tool_descriptor(name)
@@ -274,7 +324,7 @@ class ToolUseTracker:
         )
 
     def build_display_steps(self) -> list[dict[str, Any]]:
-        """构建用于卡片渲染的步骤列表 — 与 openclaw 结构对齐."""
+        """构建用于卡片渲染的步骤列表 -- 与 openclaw 结构对齐。"""
         if self._session is None:
             return []
         steps = []

@@ -1,4 +1,31 @@
-"""飞书 Open API 客户端 — 基于 lark-oapi SDK."""
+# =================================================================
+# lark-hls-v2 · feishu/client.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：封装飞书 Open API（CardKit + IM），提供流式卡片创建/更新/关闭、消息发送/回复、图片上传等能力。
+#    所有 API 调用经过 _retry_transient 自动重试（指数退避），失败抛 FeishuAPIError。
+# ② 技术栈：Python 3.11, lark-oapi SDK, asyncio, httpx（SDK 内部依赖）
+# ③ 依赖：lark_oapi（飞书 SDK），config.defaults（摘要截断长度），aowen（metrics 记录，可选）
+# ④ 给谁看：修改卡片更新逻辑、调试 API 错误、新增飞书 API 调用的开发者。
+# ▍文件从上到下的结构
+# 错误码常量区  — CARDKIT_* 常量 + 瞬态错误码集合 + 重试延迟配置
+# 错误判断函数 — is_element_limit_error / is_schema_error / is_element_not_found_error
+# FeishuClientConfig — 不可变配置 dataclass（app_id, app_secret, base_url）
+# FeishuClient 类    — ★本文件核心★，所有飞书 API 调用的入口
+#   _retry_transient — 通用重试器（瞬态错误 + 网络错误 + token 错误）
+#   _check           — SDK 响应校验，失败抛 FeishuAPIError（带 log_id）
+#   IM 方法          — send_card_to_chat / reply_card / reply_text / update_card
+#   CardKit 方法     — cardkit_create / cardkit_stream_element / cardkit_update / cardkit_batch_update / cardkit_close_streaming
+#   图片上传         — upload_image / upload_local_image / _download_image
+# ▍修改铁律
+# 1. _check 里 log_id 提取有 3 层兜底（SDK 方法 → error dict → regex），改任何一层都要确认其他层不受影响。
+# 2. cardkit_stream_element 有双重重试：外层 element-not-found 重试 + 内层 _retry_transient 瞬态重试，别合并。
+# 3. CARDKIT_TRANSIENT_CODES 里的错误码是飞书服务端瞬态问题，加新码前先确认不是业务错误。
+# 4. _sanitize_message 在日志前脱敏 token/secret，改 regex 要确认新格式也能被覆盖。
+# ▍外号表
+# "transient"   → _retry_transient()（通用瞬态重试器，指数退避）
+# "check"       → _check()（SDK 响应校验 + 抛错 + 记 metrics）
+# "stream_elem" → cardkit_stream_element()（流式打字机效果的核心方法）
+# =================================================================
 
 from __future__ import annotations
 
@@ -54,7 +81,7 @@ except ImportError:
 _logger = logging.getLogger("lark_hls_v2")
 
 def _sanitize_message(msg: str) -> str:
-    """从错误消息中移除 token 和 secret."""
+    """_sanitize_message(): 从错误消息中移除 token 和 secret，防止日志泄露凭证."""
     msg = re.sub(r'(tenant_access_token["\s:=]+)([A-Za-z0-9_-]{10,})', r"\1***", msg)
     msg = re.sub(r'(app_secret["\s:=]+)([A-Za-z0-9]{10,})', r"\1***", msg)
     msg = re.sub(r"(Bearer\s+)([A-Za-z0-9_-]{10,})", r"\1***", msg)
@@ -100,6 +127,8 @@ class FeishuAPIError(RuntimeError):
         # 兜底：返回完整消息
         return msg[:200]
 
+# --- 飞书 CardKit 错误码 ---
+# 改了会怎样：加错码 → 重试策略误判；删码 → 遗漏可恢复错误
 CARDKIT_CONTENT_FAILED = 230099  # 卡片内容创建失败（通用码，需检查子错误）
 CARDKIT_ELEMENT_LIMIT = 11310  # 子码: 卡片元素数量超限
 CARDKIT_ELEMENT_LIMIT_DIRECT = 300305  # 直报码: 卡片元素数量超限（cardkit_update 返回此码）
@@ -113,8 +142,8 @@ MSG_NOT_FOUND = 1000023  # 消息不存在/已删除
 # v1.3.1 fix: 300315 错误码有两种含义：
 _RE_ELEMENT_NOT_FOUND = re.compile(r"not find elementID", re.IGNORECASE)
 
-# 参考 Cheerwhy / openclaw-lark: 这三个错误码是飞书 CardKit 的瞬态错误，
-# v1.3.4 fix (P1): 新增 99991400 (接口频率限制) — 飞书开放平台对单个 API
+# 瞬态错误码集合 — 这些是飞书服务端临时故障，可安全重试
+# 99991400 是 per-API 频率限制（HTTP 400），非业务错误
 CARDKIT_TRANSIENT_CODES = {
     2200,     # CardKit 内部超时
     1663,     # CardKit 服务端瞬态错误
@@ -130,14 +159,14 @@ _ELEMENT_NOT_FOUND_RETRY_DELAYS = (0.2, 0.2, 0.2)
 _ELEMENT_NOT_FOUND_MAX_RETRIES = len(_ELEMENT_NOT_FOUND_RETRY_DELAYS)
 
 def is_element_limit_error(e: "FeishuAPIError") -> bool:
-    """判断 FeishuAPIError 是否为元素超限错误。"""
+    """判断是否为元素超限错误：直报码 300305 或通用码 230099 + 子码 11310."""
     return (
         e.code == CARDKIT_ELEMENT_LIMIT_DIRECT
         or (e.code == CARDKIT_CONTENT_FAILED and e.extract_sub_code() == CARDKIT_ELEMENT_LIMIT)
     )
 
 def is_schema_error(e: "FeishuAPIError") -> bool:
-    """判断 FeishuAPIError 是否为卡片 Schema 非法属性错误。"""
+    """判断是否为 Schema 非法属性错误，排除 element-not-found 的 300315."""
     if e.code != CARDKIT_SCHEMA_ERROR:
         return False
     # 排除 "not find elementID" 的情况——这是 element not found，不是 schema error
@@ -146,7 +175,7 @@ def is_schema_error(e: "FeishuAPIError") -> bool:
     return True
 
 def is_element_not_found_error(e: "FeishuAPIError") -> bool:
-    """判断 FeishuAPIError 是否为"元素不存在"错误。"""
+    """判断是否为元素不存在错误：300313 / 300314 / 300315+not find elementID."""
     if e.code == CARDKIT_ELEMENT_NOT_FOUND:
         return True
     if e.code == CARDKIT_ELEMENT_NOT_FOUND_ALT:
@@ -169,7 +198,7 @@ class FeishuClientConfig:
             raise ValueError("app_secret is required")
 
 def _is_transient_error(e: FeishuAPIError) -> bool:
-    """判断 FeishuAPIError 是否为 CardKit 瞬态错误（可重试）."""
+    """判断是否为可重试的瞬态错误：CARDKIT_TRANSIENT_CODES 或 230099 的非超限子码."""
     if e.code in CARDKIT_TRANSIENT_CODES:
         return True
     # 230099 是通用码，需检查子错误码：11310(元素超限)不可重试
@@ -179,7 +208,7 @@ def _is_transient_error(e: FeishuAPIError) -> bool:
     return False
 
 class FeishuClient:
-    """飞书 REST API 封装 — 基于 lark-oapi SDK."""
+    """★本文件核心★ FeishuClient: 飞书 REST API 封装，所有 API 调用经 _retry_transient 保护."""
 
     def __init__(self, config: FeishuClientConfig) -> None:
         self.config = config
@@ -203,7 +232,9 @@ class FeishuClient:
         *,
         max_retries: int = _TRANSIENT_MAX_RETRIES,
     ) -> Any:
-        """执行协程，遇到 CardKit 瞬态错误时自动重试."""
+        """_retry_transient(): 通用重试器，覆盖 3 类错误：瞬态 API 错误 / 网络错误 / token 刷新失败.
+        改了会怎样：重试次数变了 → 用户感知延迟变；去掉 CancelledError 分支 → asyncio 任务取消时死锁.
+        """
         last_error: FeishuAPIError | None = None
         for attempt in range(max_retries + 1):
             try:
@@ -257,7 +288,9 @@ class FeishuClient:
 
     @staticmethod
     def _check(response: Any, operation: str) -> None:
-        """检查 SDK 响应，失败时抛出 FeishuAPIError（携带 log_id）."""
+        """_check(): SDK 响应校验，失败抛 FeishuAPIError + 记 metrics.
+        log_id 提取有 3 层兜底：SDK 方法 → error dict → regex，改任何一层都要确认其他层不受影响.
+        """
         if not response.success():
             code = response.code or 0
             msg = response.msg or ""
@@ -404,7 +437,11 @@ class FeishuClient:
         *,
         sequence: int = 0,
     ) -> None:
-        """流式更新卡片内指定 element 的内容（打字机效果）."""
+        """cardkit_stream_element(): 流式打字机效果 — 更新卡片内指定 element 的内容.
+        入参：card_id, element_id, content（Markdown 文本）, sequence（防乱序）
+        副作用：调用飞书 CardKit API，自动重试 element-not-found（300313）3 次
+        改了会怎样：去掉 element-not-found 重试 → add_elements 后服务端未持久化时必炸
+        """
         async def _do():
             body_builder = ContentCardElementRequestBody.builder().content(content)
             body_builder = body_builder.sequence(sequence)

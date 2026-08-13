@@ -1,7 +1,36 @@
 """These functions are called by interceptors/ sub-package when wrapping Hermes methods."""
 
-from __future__ import annotations
+# ================================================================
+# lark-hls-v2 · interceptors/hooks.py 总导游图（改代码前必读，读完再动手）
+# ▍这是什么
+# ① 干什么：注入点（hook）的统一定义层。每个 hook 对应一个 controller 方法，
+#    负责 enabled 检查 + 异常捕获 + 参数转发。是 interceptors/ 和 controller.py
+#    之间的桥梁。
+# ② 技术栈：纯 Python + functools.wraps，无外部依赖。
+# ③ 依赖：controller.py（get_controller + 各 on_* 方法）。
+# ④ 给谁看：interceptors/gateway.py、interceptors/callbacks.py（调用方）。
+# ▍结构
+# _safe_hook() — 装饰器工厂：统一 enabled 检查 + 异常兜底
+# 注入点 0-9：
+#   0: on_feishu_normalize — 飞书引用消息 thread_id 修正
+#   1: on_message_started — 消息开始处理
+#   2: on_message_completed — 消息处理完成（带 token/context 信息）
+#   3: on_tool_updated — 工具调用状态变更
+#   4: on_answer_delta — answer 流式增量
+#   5: on_thinking_delta — thinking 流式增量
+#   6: on_reasoning_delta — 模型原生 reasoning 增量
+#   7: on_background_review_message — 后台 review 消息
+#   8: on_message_aborted — 消息中止
+#   9: on_message_interrupted — 消息被新消息中断
+#  10: on_cron_deliver — cron 推送（async，不走 _safe_hook）
+# ▍修改铁律
+# 1. 新增 hook 必须同步更新 interceptors/__init__.py 的 __all__ 和 re-export。
+# 2. on_message_completed 的参数最多（13个），改签名会影响 gateway.py 的 3 个调用点。
+# 3. on_feishu_normalize 不走 _safe_hook（需要直接访问 source/event 对象），
+#    它的异常处理是独立的。
+# ================================================================
 
+from __future__ import annotations
 import logging
 from collections.abc import Callable
 from functools import wraps
@@ -10,6 +39,7 @@ from typing import Any
 from ..controller import get_controller
 
 _logger = logging.getLogger("lark_hls_v2")
+
 
 def _safe_hook(
     default_return: Any = None,
@@ -32,6 +62,7 @@ def _safe_hook(
         return wrapper
 
     return decorator
+
 
 def on_feishu_normalize(
     *,
@@ -86,10 +117,12 @@ def on_feishu_normalize(
         source.thread_id = None
         event.source = source
 
+
 @_safe_hook()
 def on_message_started(*, ctrl: Any, message_id: str, chat_id: str, anchor_id: str | None = None) -> None:
     """[注入点 1] 函数开头 — message.started."""
     ctrl.on_message_started(message_id=message_id, chat_id=chat_id, anchor_id=anchor_id)
+
 
 @_safe_hook(default_return=False)
 def on_message_completed(
@@ -130,6 +163,7 @@ def on_message_completed(
         )
     )
 
+
 @_safe_hook(default_return=False)
 def on_tool_updated(
     *,
@@ -148,11 +182,13 @@ def on_tool_updated(
     )
     return True
 
+
 @_safe_hook(default_return=False, log_level="debug")
 def on_answer_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
     """[注入点 4] _stream_delta_cb — answer.delta."""
     ctrl.on_answer(message_id=message_id, text=text)
     return True
+
 
 @_safe_hook(default_return=False, log_level="debug")
 def on_thinking_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
@@ -160,11 +196,13 @@ def on_thinking_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
     ctrl.on_thinking(message_id=message_id, text=text)
     return True
 
+
 @_safe_hook(default_return=False, log_level="debug")
 def on_reasoning_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
     """[注入点 6] reasoning_callback — native model reasoning delta."""
     ctrl.on_reasoning(message_id=message_id, text=text)
     return True
+
 
 @_safe_hook(default_return=False, log_level="debug")
 def on_background_review_message(
@@ -178,10 +216,12 @@ def on_background_review_message(
     deferred: bool = ctrl.defer_background_review(message_id=message_id, text=text, sender=sender)
     return deferred
 
+
 @_safe_hook()
 def on_message_aborted(*, ctrl: Any, message_id: str) -> None:
     """[注入点 8] stale return None 前 — message.aborted."""
     ctrl.on_aborted(message_id=message_id)
+
 
 @_safe_hook()
 def on_message_interrupted(
@@ -199,6 +239,7 @@ def on_message_interrupted(
         chat_id=chat_id,
         anchor_id=anchor_id,
     )
+
 
 async def on_cron_deliver(
     *,
