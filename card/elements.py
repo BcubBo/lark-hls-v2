@@ -97,6 +97,7 @@ __all__ = [
     '_build_footer_elements',
     'build_seal_actions',
     '_render_footer_field',
+    '_build_static_footer',
     '_compact',
     '_format_elapsed',
     '_build_unified_panel_placeholder',
@@ -1100,3 +1101,28 @@ def _compact(n: int) -> str:
 def _format_elapsed(ms: float) -> str:
     seconds = ms / 1000
     return f"{seconds:.1f}s" if seconds < 60 else f"{int(seconds // 60)}m {int(seconds % 60)}s"
+
+
+# ── 静态卡片 footer ──────────────────────────────────────────────────
+def _build_static_footer(label: str, *, show_time: bool = True) -> list[dict]:
+    """静态卡片 footer — 简洁标记 + 时间戳。
+
+    入参：label（str）— 标签文本（如"定时任务""系统消息"）；show_time（bool）— 是否显示时间
+    返回：list[dict] — footer 元素列表（hr + markdown）
+    副作用：无
+    谁调用：build_cron_card / build_gateway_card / build_clarify_card 等
+    改动影响：改格式会影响所有静态卡片的底部显示
+    """
+    from datetime import datetime
+    now = datetime.now().strftime("%H:%M")
+    content = f"📌 {label}"
+    if show_time:
+        content += f" · {now}"
+    return [
+        {"tag": "hr"},
+        {
+            "tag": "markdown",
+            "content": content,
+            "text_size": "notation",
+        },
+    ]

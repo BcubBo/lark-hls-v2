@@ -24,7 +24,7 @@ import ast
 from typing import Any
 
 from .i18n import _LOCALES, _T, _i18n, _t
-from .elements import _escape_md, build_card_header
+from .elements import _escape_md, build_card_header, _build_static_footer
 from .md import (
     _MAX_CRON_TABLES,
     _downgrade_tables,
@@ -135,7 +135,7 @@ def build_cron_card(content: str, *, title: str = "⏰ 定时任务") -> dict[st
     card: dict[str, Any] = {
         "schema": "2.0",
         "config": {"locales": _LOCALES},
-        "header": build_card_header(title=title, icon_token="time_outlined", template="green"),
+        "header": build_card_header(title=title, template="green"),
         "body": {"elements": []},
     }
     if not content.strip():
@@ -147,6 +147,7 @@ def build_cron_card(content: str, *, title: str = "⏰ 定时任务") -> dict[st
     for chunk in _split_long_text(_downgrade_tables(optimize_markdown_style(content), limit=_MAX_CRON_TABLES)):
         if chunk.strip():
             card["body"]["elements"].append({"tag": "markdown", "content": chunk})
+    card["body"]["elements"].extend(_build_static_footer("定时任务"))
     return card
 
 
@@ -156,9 +157,9 @@ def build_cron_card(content: str, *, title: str = "⏰ 定时任务") -> dict[st
 # category 保留给 reaction routing 用。
 # ================================================================
 
-def build_gateway_card(content: str, *, category: str = "", status_label: str = "", status_emoji: str = "") -> dict[str, Any]:
+def build_gateway_card(content: str, *, category: str = "", status_label: str = "", status_emoji: str = "", title: str = "⚙️ 系统消息") -> dict[str, Any]:
     """build_gateway_card()：契约
-    入参：content（str）— markdown 内容；category/status_label/status_emoji — 可选装饰
+    入参：content（str）— markdown 内容；category/status_label/status_emoji — 可选装饰；title（str）— header 标题
     返回：dict — CardKit 2.0 schema 卡片 JSON
     副作用：无
     谁调用：controller._do_gateway_deliver(), controller._do_gateway_card_update()
@@ -185,6 +186,7 @@ def build_gateway_card(content: str, *, category: str = "", status_label: str = 
     card: dict[str, Any] = {
         "schema": "2.0",
         "config": {"locales": _LOCALES},
+        "header": build_card_header(title=title, template="blue"),
         "body": {"elements": elements},
     }
 
@@ -192,6 +194,7 @@ def build_gateway_card(content: str, *, category: str = "", status_label: str = 
     summary = content[:_def.SUMMARY_MAX_LENGTH].replace("\n", " ").replace("```", "").strip() if content.strip() else ""
     if summary:
         card["config"]["summary"] = {"content": summary}
+    card["body"]["elements"].extend(_build_static_footer("系统消息"))
 
     return card
 
@@ -296,7 +299,7 @@ def build_clarify_card(*, question: str, choices: list[str] | None = None, clari
             "streaming_mode": False,
             "locales": _LOCALES,
         },
-        "header": build_card_header(title="需确认", icon_token="info_outlined", template="blue"),
+        "header": build_card_header(title="需确认", template="blue"),
         "body": {"elements": elements},
     }
     return card
@@ -380,9 +383,10 @@ def build_clarify_submitted_card(*, question: str, selected: str, clarify_id: st
             "streaming_mode": False,
             "locales": _LOCALES,
         },
-        "header": build_card_header(title="已提交", icon_token="info_outlined", template="blue"),
+        "header": build_card_header(title="已提交", template="blue"),
         "body": {"elements": elements},
     }
+    card["body"]["elements"].extend(_build_static_footer("已提交"))
     return card
 
 def build_clarify_confirmed_card(*, question: str, selected: str) -> dict[str, Any]:
@@ -444,7 +448,8 @@ def build_clarify_confirmed_card(*, question: str, selected: str) -> dict[str, A
             "streaming_mode": False,
             "locales": _LOCALES,
         },
-        "header": build_card_header(title="已确认", icon_token="info_outlined", template="blue"),
+        "header": build_card_header(title="已确认", template="blue"),
         "body": {"elements": elements},
     }
+    card["body"]["elements"].extend(_build_static_footer("已确认"))
     return card
