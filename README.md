@@ -59,12 +59,25 @@
 
 先确认你的 profile 名称（通常在 `~/.hermes/profiles/` 下），然后克隆：
 
+**Linux / macOS：**
+
 ```bash
 # 查看当前有哪些 profile
 ls ~/.hermes/profiles/
 
 # 克隆到你的 profile 的 plugins 目录（将 <profile> 替换为你的 profile 名）
 cd ~/.hermes/profiles/<profile>/plugins/
+git clone https://github.com/BcubBo/lark-hls-v2.git
+```
+
+**Windows：**
+
+```powershell
+# 查看当前有哪些 profile
+dir %USERPROFILE%\.hermes\profiles\
+
+# 克隆到你的 profile 的 plugins 目录（将 <profile> 替换为你的 profile 名）
+cd %USERPROFILE%\.hermes\profiles\<profile>\plugins\
 git clone https://github.com/BcubBo/lark-hls-v2.git
 ```
 
