@@ -75,20 +75,20 @@ class HermesCompat:
         self.conversation_loop_func: Any | None = None
         self.run_agent_module: Any | None = None
 
-        # GatewayRunner
-        try:
-            from gateway.run import GatewayRunner
-            self.gateway_runner_class = GatewayRunner
-        except Exception:
-            _logger.debug("HLS: GatewayRunner not available yet")
+        # GatewayRunner — 从 sys.modules 缓存读取，避免 import 锁死锁
+        gateway_run = sys.modules.get("gateway.run")
+        if gateway_run is not None:
+            self.gateway_runner_class = getattr(gateway_run, "GatewayRunner", None)
+        else:
+            _logger.debug("HLS: GatewayRunner not available yet (will retry)")
 
-        # AIAgent
-        try:
-            from run_agent import AIAgent
-            self.aiagent_class = AIAgent
-            self.run_agent_module = sys.modules.get("run_agent")
-        except Exception:
-            _logger.debug("HLS: AIAgent not available yet")
+        # AIAgent — 从 sys.modules 缓存读取，避免 import 锁死锁
+        run_agent = sys.modules.get("run_agent")
+        if run_agent is not None:
+            self.aiagent_class = getattr(run_agent, "AIAgent", None)
+            self.run_agent_module = run_agent
+        else:
+            _logger.debug("HLS: AIAgent not available yet (will retry)")
 
         # FeishuAdapter — 抽取到 _resolve_feishu_adapter()，
         # 便于 resolve_feishu_adapter_class_fresh() 复用（v1.4.0: fix deferred loading patch miss）

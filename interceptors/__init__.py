@@ -33,6 +33,7 @@ import contextvars
 import logging
 import threading
 import time
+import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any, Callable
 
@@ -223,7 +224,11 @@ def _apply_gateway_runner_patches() -> bool:
     if _gw_runner_patched:
         return True  # Already patched (e.g. immediate path succeeded)
 
-    GatewayRunner = HermesCompat().gateway_runner_class
+    # 从 sys.modules 缓存读取，避免新建 HermesCompat() 导致死锁
+    gateway_run = sys.modules.get("gateway.run")
+    if gateway_run is None:
+        return False  # Not available yet
+    GatewayRunner = getattr(gateway_run, "GatewayRunner", None)
     if GatewayRunner is None:
         return False  # Not available yet
 
@@ -605,9 +610,14 @@ def _apply_direct_agent_patch() -> None:
     """Directly patch AIAgent.run_conversation as belt-and-suspenders.
     改了这里会导致没有 conversation_loop module 的 Hermes 版本失去流式卡片。
     """
-    AIAgent = HermesCompat().aiagent_class
-    if AIAgent is None:
+    # 从 sys.modules 缓存读取，避免新建 HermesCompat() 导致死锁
+    run_agent = sys.modules.get("run_agent")
+    if run_agent is None:
         _logger.info("lark-hls-v2: AIAgent.run_conversation direct patch deferred (run_agent not yet loaded)")
+        return
+    AIAgent = getattr(run_agent, "AIAgent", None)
+    if AIAgent is None:
+        _logger.info("lark-hls-v2: AIAgent.run_conversation direct patch deferred (AIAgent not found)")
         return
 
     try:
