@@ -120,13 +120,13 @@ def normalize_clarify_choices(choices: list[str] | None) -> list[str]:
 
 
 # ================================================================
-# ▍build_cron_card — 定时推送极简卡片
-# 仅 markdown 内容，无交互元素，无 header。
+# ▍build_cron_card — 定时推送卡片
+# markdown 内容 + 美化 header，无交互元素。
 # ================================================================
 
-def build_cron_card(content: str) -> dict[str, Any]:
+def build_cron_card(content: str, *, title: str = "⏰ 定时任务") -> dict[str, Any]:
     """build_cron_card()：契约
-    入参：content（str）— markdown 格式的推送内容
+    入参：content（str）— markdown 格式的推送内容；title（str）— header 标题
     返回：dict — CardKit 2.0 schema 卡片 JSON
     副作用：无
     谁调用：controller._do_cron_deliver()
@@ -135,6 +135,7 @@ def build_cron_card(content: str) -> dict[str, Any]:
     card: dict[str, Any] = {
         "schema": "2.0",
         "config": {"locales": _LOCALES},
+        "header": build_card_header(title=title, icon_token="time_outlined", template="green"),
         "body": {"elements": []},
     }
     if not content.strip():
