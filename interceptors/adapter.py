@@ -977,4 +977,152 @@ def _handle_clarify_card_action(
         return _submitted_card_response(input_text, choices, question, clarify_id)
 
     _logger.debug("clarify card: unknown action '%s', ignoring", clarify_action)
-    return _empty_response()
+
+
+# ── Sender name SQLite fallback ────────────────────────────────────────
+# Monkey-patch FeishuAdapter._resolve_sender_profile to fall back to
+# feishu.group.sqlite3 when the contact API returns no name (e.g. external
+# users, 41050 error, rate limit).
+#
+# The SQLite table is maintained by:
+#   - contact API success → auto-cache (source=api)
+#   - user self-report → auto-learn (source=self_report)
+#   - manual registration (source=manual)
+#
+# This patch is safe: if SQLite is missing or empty, it's a no-op.
+
+import sqlite3 as _sqlite3
+import os as _os
+
+_SQLITE_PATH = _os.path.join(
+    _os.environ.get("HERMES_HOME", _os.path.expanduser("~/.hermes")),
+    "feishu.group.sqlite3",
+)
+_SQLITE_PATHS = [
+    _SQLITE_PATH,
+    _os.path.expanduser("~/.hermes/profiles/bo/feishu.group.sqlite3"),
+    _os.path.expanduser("~/.hermes/feishu.group.sqlite3"),
+]
+
+
+_SQLITE_INITIALIZED: set[str] = set()
+
+
+def _ensure_sqlite_schema(db_path: str) -> bool:
+    """Create feishu_users table if it doesn't exist. Returns True if ready."""
+    if db_path in _SQLITE_INITIALIZED:
+        return True
+    try:
+        conn = _sqlite3.connect(db_path, timeout=5)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS feishu_users (
+                open_id     TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                role        TEXT NOT NULL DEFAULT 'member',
+                permissions TEXT DEFAULT '{}',
+                source      TEXT NOT NULL DEFAULT 'api',
+                chat_id     TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                linked_id   TEXT,
+                feishu_role TEXT DEFAULT 'member'
+            )
+        """)
+        conn.commit()
+        conn.close()
+        _SQLITE_INITIALIZED.add(db_path)
+        return True
+    except Exception:
+        return False
+
+
+def _sqlite_get_name(open_id: str) -> str | None:
+    """Look up display name from feishu_users SQLite cache."""
+    if not open_id:
+        return None
+    for db_path in _SQLITE_PATHS:
+        if not _os.path.exists(db_path):
+            continue
+        if not _ensure_sqlite_schema(db_path):
+            continue
+        try:
+            conn = _sqlite3.connect(db_path, timeout=5)
+            row = conn.execute(
+                "SELECT name FROM feishu_users WHERE open_id = ?", (open_id,)
+            ).fetchone()
+            conn.close()
+            if row and row[0]:
+                return row[0]
+        except Exception:
+            pass
+    return None
+
+
+def _install_sender_sqlite_fallback() -> None:
+    """Wrap FeishuAdapter._resolve_sender_profile with SQLite fallback."""
+    try:
+        from hermes_plugins.feishu_platform.adapter import FeishuAdapter
+    except ImportError:
+        try:
+            from plugins.platforms.feishu.adapter import FeishuAdapter
+        except ImportError:
+            _logger.debug("[HLS] FeishuAdapter not found, skipping SQLite sender fallback")
+            return
+
+    _orig_resolve = FeishuAdapter._resolve_sender_profile
+
+    async def _resolve_sender_profile_with_sqlite(
+        self, sender_id: Any, *, is_bot: bool = False,
+    ) -> dict:
+        result = await _orig_resolve(self, sender_id, is_bot=is_bot)
+        # If API resolved a name, also cache it in SQLite for future use
+        if result.get("user_name"):
+            open_id = getattr(sender_id, "open_id", None) or None
+            if open_id:
+                _sqlite_cache_name(open_id, result["user_name"])
+            return result
+        # Fallback: try SQLite
+        open_id = getattr(sender_id, "open_id", None) or None
+        if not open_id:
+            return result
+        name = _sqlite_get_name(open_id)
+        if name:
+            _logger.info("[HLS] Sender name from SQLite cache: %s (%s)", name, open_id[:12])
+            result["user_name"] = name
+        return result
+
+    FeishuAdapter._resolve_sender_profile = _resolve_sender_profile_with_sqlite
+    _logger.info("[HLS] Sender SQLite fallback installed (db=%s)", _SQLITE_PATH)
+
+
+def _sqlite_cache_name(open_id: str, name: str) -> None:
+    """Cache a resolved name in SQLite (upsert, source=api)."""
+    for db_path in _SQLITE_PATHS:
+        if not _os.path.exists(db_path):
+            # Try to create in HERMES_HOME path
+            if db_path != _SQLITE_PATH:
+                continue
+            _os.makedirs(_os.path.dirname(db_path), exist_ok=True)
+        if not _ensure_sqlite_schema(db_path):
+            continue
+        try:
+            conn = _sqlite3.connect(db_path, timeout=5)
+            conn.execute(
+                """INSERT INTO feishu_users (open_id, name, role, permissions, source, updated_at)
+                   VALUES (?, ?, 'member', '{}', 'api', CURRENT_TIMESTAMP)
+                   ON CONFLICT(open_id) DO UPDATE SET
+                     name=excluded.name, source='api', updated_at=CURRENT_TIMESTAMP""",
+                (open_id, name),
+            )
+            conn.commit()
+            conn.close()
+            return
+        except Exception:
+            pass
+
+
+# Auto-install on module load
+try:
+    _install_sender_sqlite_fallback()
+except Exception as _e:
+    _logger.debug("[HLS] Sender SQLite fallback install failed: %s", _e)

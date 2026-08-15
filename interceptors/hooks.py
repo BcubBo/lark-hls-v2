@@ -37,6 +37,7 @@ from functools import wraps
 from typing import Any
 
 from ..controller import get_controller
+from ..feishu.user_cache import FeishuUserCache
 
 _logger = logging.getLogger("lark_hls_v2")
 
@@ -115,7 +116,10 @@ def on_feishu_normalize(
 
     if reply_to and source_thread_id and not real_thread_id:
         source.thread_id = None
-        event.source = source
+    
+    # Inject system_role into source.user_name for AI permission checking
+    _inject_system_role(source)
+
 
 
 @_safe_hook()
@@ -258,3 +262,44 @@ async def on_cron_deliver(
     except Exception as exc:
         _logger.warning("on_cron_deliver error: %s", exc, exc_info=True)
         return False
+
+# ---------------------------------------------------------------------------
+# System role injection: inject system_role into source.user_name
+# ---------------------------------------------------------------------------
+
+_user_cache: FeishuUserCache | None = None
+
+def _get_user_cache() -> FeishuUserCache:
+    global _user_cache
+    if _user_cache is None:
+        from hermes_constants import get_hermes_home
+        _user_cache = FeishuUserCache(str(get_hermes_home() / "feishu.group.sqlite3"))
+    return _user_cache
+
+def _inject_system_role(source: Any) -> None:
+    """Inject system_role into source.user_name.
+    
+    Changes user_name from '何博洋' to 'admin:何博洋' so AI can see the role
+    and apply SOUL.md permission rules during reasoning.
+    """
+    try:
+        user_id = getattr(source, "user_id", None) or ""
+        user_name = getattr(source, "user_name", None) or ""
+        
+        if not user_id or not user_name:
+            return
+        
+        # Skip if already has role prefix
+        if ":" in user_name and user_name.split(":")[0] in ("admin", "moderator", "member"):
+            return
+        
+        cache = _get_user_cache()
+        user_info = cache.get_user(user_id)
+        
+        if user_info:
+            system_role = user_info.get("system_role", "member")
+            if system_role in ("admin", "moderator"):
+                source.user_name = f"{system_role}:{user_name}"
+                _logger.info("[FeishuUserCache] Injected role %s for %s", system_role, user_name)
+    except Exception as e:
+        _logger.warning("[FeishuUserCache] Failed to inject system_role: %s", e)
