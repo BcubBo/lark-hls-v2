@@ -249,25 +249,16 @@ async def on_cron_deliver(
     *,
     chat_id: str,
     content: str,
-    category: str = "",
     loop: Any = None,
 ) -> bool:
-    """[注入点 10] cron 推送 — 包装为飞书卡片发送.
-    
-    category: "cron" (默认) | "gateway" | "clarify" 等，决定使用哪种卡片模板
-    """
+    """[注入点 10] cron 推送 — 包装为飞书卡片发送."""
     if loop is None:
         return False
     try:
         ctrl = get_controller()
         if not ctrl.enabled:
             return False
-        
-        # 自动检测 category：如果内容包含 "unknown command"，使用 gateway 卡片
-        if not category and "unknown command" in content.lower():
-            category = "gateway"
-        
-        return bool(await ctrl.on_cron_deliver_async(chat_id=chat_id, content=content, category=category, loop=loop))
+        return bool(await ctrl.on_cron_deliver_async(chat_id=chat_id, content=content, loop=loop))
     except Exception as exc:
         _logger.warning("on_cron_deliver error: %s", exc, exc_info=True)
         return False

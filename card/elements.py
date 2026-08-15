@@ -803,7 +803,7 @@ def build_card_header(
     *,
     title: str = "", 
     subtitle: str = "",
-    icon_token: str = "",
+    icon_token: str = "info_outlined",
     template: str = "green",
 ) -> dict:
     """Card-level header (top banner above body elements).
