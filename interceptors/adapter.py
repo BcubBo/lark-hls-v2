@@ -1108,10 +1108,10 @@ def _sqlite_cache_name(open_id: str, name: str) -> None:
         try:
             conn = _sqlite3.connect(db_path, timeout=5)
             conn.execute(
-                """INSERT INTO feishu_users (open_id, name, role, permissions, source, updated_at)
+                """INSERT INTO feishu_users (open_id, name, feishu_role, permissions, source, updated_at)
                    VALUES (?, ?, 'member', '{}', 'api', CURRENT_TIMESTAMP)
                    ON CONFLICT(open_id) DO UPDATE SET
-                     name=excluded.name, source='api', updated_at=CURRENT_TIMESTAMP""",
+                     name=excluded.name, feishu_role='member', source='api', updated_at=CURRENT_TIMESTAMP""",
                 (open_id, name),
             )
             conn.commit()
