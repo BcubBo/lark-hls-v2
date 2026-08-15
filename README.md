@@ -305,6 +305,7 @@ lark-hls-v2/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
+| v2.9.0 | 2026-08-15 | feishu_role 修复（API缓存只写 feishu_role）、静态卡片统一 header+footer、/ping 等 gateway 消息自动检测 category、去掉 header 默认 icon |
 | v2.7.0 | 2026-08-13 | linear_mixin.py → card_flow.py 重命名，streaming_panel_expanded 默认改为 false，新增 card_ttl_sec/max_tool_steps/max_reasoning_rounds 配置说明 |
 | v2.6.0 | 2026-08-12 | 全量功能代码同步，部署目录与 GitHub 统一，README 重写 |
 | v2.5.0 | 2026-08-12 | 台词库扩充至 1025 条（544 台词 + 177 语气词 + 96 结束语），新增死神/火影/转生史莱姆条目，修复 Unicode 乱码，同源间隔算法，header icon 可选化 |
