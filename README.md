@@ -57,7 +57,27 @@
 
 > **⚠️ 注意：** Hermes 使用 profile 机制时，插件目录是 `~/.hermes/profiles/<name>/plugins/`，不是 `~/.hermes/plugins/`。用错目录会导致插件不加载。
 
-先确认你的 profile 名称（通常在 `~/.hermes/profiles/` 下），然后克隆：
+**检查是否有 profile：**
+
+```bash
+# Linux / macOS
+ls ~/.hermes/profiles/
+
+# Windows
+dir %USERPROFILE%\.hermes\profiles```
+
+如果目录为空或不存在，说明没有使用 profile 机制，直接克隆到 `~/.hermes/plugins/`：
+
+```bash
+# Linux / macOS
+cd ~/.hermes/plugins/
+git clone https://github.com/BcubBo/lark-hls-v2.git
+
+# Windows
+cd %USERPROFILE%\.hermes\pluginsgit clone https://github.com/BcubBo/lark-hls-v2.git
+```
+
+如果有 profile，克隆到对应的 profile 目录：
 
 **Linux / macOS：**
 
