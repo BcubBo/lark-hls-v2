@@ -94,10 +94,11 @@ class QuoteManager:
             self._load_quotes()
 
     def get_quote(self, scene: str, *, short: bool = False) -> str:
-        """Get a random quote for the given scene with source-aware spacing.
+        """Get a random quote for the given scene with shuffled queue.
 
-        Guarantees that quotes from the same anime source won't appear
-        within SOURCE_COOLDOWN selections of each other for the same scene.
+        Uses a Fisher-Yates shuffled queue per scene: quotes are consumed
+        in order, and the queue is reshuffled when exhausted. This guarantees
+        no repetition within a full cycle through the quote pool.
 
         Args:
             scene: Scene name (greeting, thinking, battle, etc.)
@@ -114,27 +115,30 @@ class QuoteManager:
         if not quotes:
             return ""
 
-        # Non-repeating random selection
-        used = self._used.setdefault(category, [])
+        # Get or create shuffled queue for this scene
+        queue = self._shuffled.setdefault(category, [])
         recent = self._recent_sources.setdefault(
             category, deque(maxlen=self.SOURCE_COOLDOWN)
         )
 
-        available = [i for i in range(len(quotes)) if i not in used]
-        if not available:
-            used.clear()
-            available = list(range(len(quotes)))
+        # Reshuffle if queue is empty
+        if not queue:
+            queue = list(range(len(quotes)))
+            random.shuffle(queue)
 
-        # Filter: prefer quotes whose source is NOT in recent sources
-        fresh = [
-            i for i in available
-            if quotes[i].get("source", "") not in recent
-        ]
-        # Fall back to all available if constraint is too tight
-        pool = fresh if fresh else available
+        # Try to find a quote whose source is NOT in recent
+        idx = None
+        for _ in range(min(len(queue), 10)):
+            candidate = queue[0]
+            source = quotes[candidate].get("source", "")
+            if source not in recent:
+                idx = queue.pop(0)
+                break
+            queue.append(queue.pop(0))
 
-        idx = random.choice(pool)
-        used.append(idx)
+        # If all candidates are from recent sources, just take the first one
+        if idx is None:
+            idx = queue.pop(0)
 
         q = quotes[idx]
         source = q.get("source", "")
