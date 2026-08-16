@@ -1104,10 +1104,10 @@ def _format_elapsed(ms: float) -> str:
 
 
 # ── 静态卡片 footer ──────────────────────────────────────────────────
-def _build_static_footer(label: str, *, show_time: bool = True) -> list[dict]:
-    """静态卡片 footer — 简洁标记 + 时间戳。
+def _build_static_footer(label: str, *, show_time: bool = True, extra_info: str = "") -> list[dict]:
+    """静态卡片 footer — 简洁标记 + 时间戳 + 额外信息。
 
-    入参：label（str）— 标签文本（如"定时任务""系统消息"）；show_time（bool）— 是否显示时间
+    入参：label（str）— 标签文本（如"定时任务""系统消息"）；show_time（bool）— 是否显示时间；extra_info（str）— 额外信息（如任务名称）
     返回：list[dict] — footer 元素列表（hr + markdown）
     副作用：无
     谁调用：build_cron_card / build_gateway_card / build_clarify_card 等
@@ -1116,6 +1116,8 @@ def _build_static_footer(label: str, *, show_time: bool = True) -> list[dict]:
     from datetime import datetime
     now = datetime.now().strftime("%H:%M")
     content = f"📌 {label}"
+    if extra_info:
+        content += f" · {extra_info}"
     if show_time:
         content += f" · {now}"
     return [

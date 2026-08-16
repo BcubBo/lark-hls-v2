@@ -66,7 +66,7 @@ class QuoteManager:
 
     def __init__(self) -> None:
         self._quotes: dict[str, list[dict[str, str]]] = {}
-        self._used: dict[str, list[int]] = {}  # scene -> list of used indices
+        self._shuffled: dict[str, list[int]] = {}  # scene -> shuffled index queue
         self._recent_sources: dict[str, deque[str]] = {}  # scene -> recent source names
         self._last_load_time: float = 0
         self._load_interval: float = 300  # Reload every 5 minutes
@@ -231,7 +231,14 @@ class QuoteManager:
         if not expressions:
             return ""
 
-        return random.choice(expressions)
+        # Use shuffled queue for moods too
+        key = f"mood_{category}"
+        queue = self._shuffled.setdefault(key, [])
+        if not queue:
+            queue = list(range(len(expressions)))
+            random.shuffle(queue)
+        idx = queue.pop(0)
+        return expressions[idx]
 
     def get_seal_ending(self) -> str:
         """Get a random seal ending quote.
@@ -251,4 +258,10 @@ class QuoteManager:
         if not endings:
             return ""
 
-        return random.choice(endings)
+        # Use shuffled queue for seal endings
+        queue = self._shuffled.setdefault("seal_endings", [])
+        if not queue:
+            queue = list(range(len(endings)))
+            random.shuffle(queue)
+        idx = queue.pop(0)
+        return endings[idx]

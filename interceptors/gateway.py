@@ -722,7 +722,9 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
                     if not cleaned.strip():
                         cleaned = content
 
-                    await ctrl._do_cron_deliver(chat_id, cleaned.strip())
+                    # Extract job name for footer display
+                    job_name = job.get("name", "") or job.get("id", "")[:12]
+                    await ctrl._do_cron_deliver(chat_id, cleaned.strip(), job_name=job_name)
 
                     _logger.info(
                         "lark-hls-v2 v%s: cron card delivered: chat=%s",
