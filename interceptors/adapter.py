@@ -128,7 +128,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                         if (
                             _sess.chat_id == chat_id
                             and _sess.card_msg_id
-                            and _sess.state not in ("completed", "aborted")
+                            and _sess.state != "aborted"
                         ):
                             _logger.info(
                                 "gateway_send: _msg_ctx=None but active card session found "
