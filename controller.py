@@ -748,13 +748,13 @@ class StreamCardController(UnifiedControllerMixin):
     # _upgrade_loading_hint_to_thinking, _linear_on_thinking,
     # _finalize_card, _complete_card_flow are all implemented in card_flow.py
 
-    async def _do_cron_deliver(self, chat_id: str, content: str, *, job_name: str = "") -> None:
+    async def _do_cron_deliver(self, chat_id: str, content: str) -> None:
         """Cron 投递 — 发送卡片到指定 chat."""
         from .card import build_cron_card
-        _logger.info("cron _do_cron_deliver: chat=%s content_len=%d job=%s", chat_id[:12], len(content), job_name)
+        _logger.info("cron _do_cron_deliver: chat=%s content_len=%d", chat_id[:12], len(content))
         await self._ensure_init()
         assert self._client is not None
-        card = build_cron_card(content, job_name=job_name)
+        card = build_cron_card(content)
         await self._client.send_card_to_chat(chat_id, card)
 
     async def _do_gateway_deliver(
