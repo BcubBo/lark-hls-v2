@@ -116,6 +116,33 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                     # Agent still running, card not yet sent — don't interfere
                     return await orig_send(self_feishu, chat_id, content, reply_to=reply_to, metadata=metadata, **kwargs)
 
+        # ── Fallback: _msg_ctx was cleaned up, but check if a card session is still active ──
+        # Without this, the text reply falls through to gateway card path and creates
+        # a duplicate static card below the streaming card.
+        if ctx is None:
+            try:
+                from ..controller import get_controller
+                _ctrl = get_controller()
+                if _ctrl and _ctrl.enabled:
+                    for _sess in _ctrl._sess_values_snapshot():
+                        if (
+                            _sess.chat_id == chat_id
+                            and _sess.card_msg_id
+                            and _sess.state not in ("completed", "aborted")
+                        ):
+                            _logger.info(
+                                "gateway_send: _msg_ctx=None but active card session found "
+                                "(msg=%s state=%s), suppressing text reply",
+                                (_sess.message_id or "?")[:12], _sess.state,
+                            )
+                            try:
+                                from gateway.platforms.base import SendResult
+                                return SendResult(success=True)
+                            except Exception:
+                                return None
+            except Exception:
+                _logger.debug("HLS: fallback card check failed", exc_info=True)
+
         # v1.3.2 fix (B3-04): the previous detection used a bare substring
         _stripped = content.strip()
         _is_stop_response = (
