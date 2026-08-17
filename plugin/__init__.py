@@ -170,6 +170,7 @@ def _cleanup_config() -> None:
         _logger.exception("Failed to clean up lark_hls_v2 config")
 
 
+
 def register(ctx: "PluginContext") -> None:
     """register()：契约
     入参：ctx（PluginContext）— Hermes 插件上下文

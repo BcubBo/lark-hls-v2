@@ -124,7 +124,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                 from ..controller import get_controller
                 _ctrl = get_controller()
                 if _ctrl and _ctrl.enabled:
-                    for _sess in _ctrl._sess_values_snapshot():
+                    for _, _sess in _ctrl._sess_items_snapshot():
                         if (
                             _sess.chat_id == chat_id
                             and _sess.card_msg_id
@@ -156,7 +156,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                 _ctrl = get_controller()
                 if _ctrl and _ctrl.enabled:
                     # Find an active streaming session in this chat
-                    for _sess in _ctrl._sess_values_snapshot():
+                    for _, _sess in _ctrl._sess_items_snapshot():
                         if (
                             _sess.chat_id == chat_id
                             and _sess.state in ("streaming", "creating", "idle")

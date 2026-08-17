@@ -32,6 +32,7 @@
 
 from __future__ import annotations
 import logging
+import os
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -119,8 +120,9 @@ def on_feishu_normalize(
     
     # Inject system_role into source.user_name for AI permission checking
     _inject_system_role(source)
-
-
+    
+    # Auto-insert sender into feishu_users database (group context)
+    _auto_insert_sender(source, raw)
 
 @_safe_hook()
 def on_message_started(*, ctrl: Any, message_id: str, chat_id: str, anchor_id: str | None = None) -> None:
@@ -312,3 +314,223 @@ def _inject_system_role(source: Any) -> None:
                 _logger.info("[FeishuUserCache] Injected role %s for %s", system_role, user_name)
     except Exception as e:
         _logger.warning("[FeishuUserCache] Failed to inject system_role: %s", e)
+
+
+def _auto_insert_sender(source: Any, raw_event: Any) -> None:
+    """群消息自动入库 + 群成员全量同步。
+    
+    触发条件：群消息到达时。
+    1. 自动将发送者写入 feishu_users（open_id + name + chat_id）
+    2. 调飞书 API 拉群成员列表，补齐所有人的 feishu_role 和 chat_id
+    3. 同步 open_id ↔ user_id 的 linked_id 关联
+    
+    限流：每个 chat_id 每 5 分钟最多同步一次。
+    """
+    try:
+        chat_type = getattr(source, "chat_type", "dm") or "dm"
+        if chat_type == "dm":
+            return
+        
+        chat_id = getattr(source, "chat_id", "") or ""
+        user_id = getattr(source, "user_id", "") or ""
+        user_name = getattr(source, "user_name", "") or ""
+        
+        if not chat_id or not user_id:
+            return
+        
+        # 跳过已带 role 前缀的名字
+        clean_name = user_name
+        if ":" in clean_name and clean_name.split(":")[0] in ("admin", "moderator", "member"):
+            clean_name = clean_name.split(":", 1)[1]
+        
+        # 检查 sender_type，跳过 bot 消息
+        try:
+            if isinstance(raw_event, dict):
+                sender_type = raw_event.get("event", {}).get("sender", {}).get("sender_type", "")
+            else:
+                event_obj = getattr(raw_event, "event", None)
+                sender = getattr(event_obj, "sender", None) if event_obj else None
+                sender_type = getattr(sender, "sender_type", "") if sender else ""
+            if sender_type == "app":
+                return
+        except Exception:
+            pass
+        
+        # 步骤1：插入发送者
+        cache = _get_user_cache()
+        if clean_name:
+            cache.auto_insert_from_message(
+                open_id=user_id,
+                name=clean_name,
+                chat_id=chat_id,
+                feishu_role="member",  # 后续由全量同步覆盖
+            )
+        
+        # 步骤2：限流检查后同步群成员
+        _sync_group_members_if_needed(chat_id, cache)
+            
+    except Exception as e:
+        _logger.debug("[FeishuUserCache] _auto_insert_sender error: %s", e)
+
+
+# ── 群成员同步（飞书 API）───────────────────────────────────────────
+
+_sync_cache: dict[str, float] = {}  # chat_id → last_sync_ts
+_SYNC_COOLDOWN = 300  # 5 分钟
+_SYNC_FAIL_COOLDOWN = 600  # 失败后 10 分钟再试
+
+
+def _sync_group_members_if_needed(chat_id: str, cache: "FeishuUserCache") -> None:
+    """限流：每个 chat_id 每 5 分钟最多同步一次群成员。失败后 10 分钟再试。"""
+    import time
+    now = time.time()
+    last = _sync_cache.get(chat_id, 0)
+    if now - last < _SYNC_COOLDOWN:
+        return
+    _sync_cache[chat_id] = now  # 预设冷却，无论成功失败
+    try:
+        _sync_group_members(chat_id, cache)
+    except Exception as e:
+        _logger.warning("[FeishuUserCache] sync_group_members failed for %s: %s", chat_id[:16], e)
+        # 失败时延长冷却，避免每条消息都重试
+        _sync_cache[chat_id] = now + (_SYNC_FAIL_COOLDOWN - _SYNC_COOLDOWN)
+
+
+def _get_tenant_access_token() -> str:
+    """从环境变量获取飞书 tenant_access_token。"""
+    import urllib.request
+    import json as _json
+    
+    app_id = os.environ.get("FEISHU_APP_ID", "")
+    app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+    if not app_id or not app_secret:
+        return ""
+    
+    req = urllib.request.Request(
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        data=_json.dumps({"app_id": app_id, "app_secret": app_secret}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = _json.loads(resp.read())
+    return data.get("tenant_access_token", "")
+
+
+def _feishu_api_get(token: str, url: str) -> dict:
+    """GET 飞书 API，返回 JSON dict。"""
+    import urllib.request
+    import json as _json
+    
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return _json.loads(resp.read())
+
+
+def _sync_group_members(chat_id: str, cache: "FeishuUserCache") -> None:
+    """拉取飞书群成员列表，同步到 SQLite。
+    
+    1. 获取群信息（群主 ID）→ 设置 feishu_role=owner
+    2. 获取群成员列表 → 所有人 chat_id + name
+    3. 自动关联 open_id ↔ user_id（同名记录互绑 linked_id）
+    """
+    token = _get_tenant_access_token()
+    if not token:
+        raise RuntimeError("Failed to get tenant_access_token")
+    
+    _logger.info("[FeishuUserCache] Syncing group members for chat=%s", chat_id[:16])
+    
+    # 获取群主信息
+    owner_id = ""
+    try:
+        chat_info = _feishu_api_get(
+            token,
+            f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}",
+        )
+        owner_id = chat_info.get("data", {}).get("owner_id", "")
+    except Exception:
+        _logger.debug("[FeishuUserCache] Failed to get chat info", exc_info=True)
+    
+    # 获取群成员列表
+    members = []
+    page_token = ""
+    while True:
+        url = (
+            f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}/members"
+            f"?member_id_type=open_id&page_size=100"
+        )
+        if page_token:
+            url += f"&page_token={page_token}"
+        try:
+            resp = _feishu_api_get(token, url)
+        except Exception:
+            _logger.debug("[FeishuUserCache] Failed to get members", exc_info=True)
+            break
+        
+        data = resp.get("data", {})
+        members.extend(data.get("items", []))
+        if not data.get("has_more"):
+            break
+        page_token = data.get("page_token", "")
+    
+    if not members:
+        return
+    
+    _logger.info("[FeishuUserCache] Found %d members in chat=%s", len(members), chat_id[:16])
+    
+    # 同步每个成员
+    for m in members:
+        mid = m.get("member_id", "")
+        mname = m.get("name", "")
+        if not mid or not mname:
+            continue
+        
+        feishu_role = "owner" if mid == owner_id else "member"
+        # 写 group_members 表（精确 open_id + chat_id）
+        cache.upsert_group_member(
+            open_id=mid,
+            chat_id=chat_id,
+            feishu_role=feishu_role,
+        )
+        # 同时更新 feishu_users 基础信息（name）
+        cache.auto_insert_from_message(
+            open_id=mid,
+            name=mname,
+            chat_id=chat_id,
+            feishu_role=feishu_role,
+        )
+    
+    # 自动关联 linked_id（同名的 open_id 和 user_id 记录互绑）
+    _link_ids_by_name(cache)
+
+
+def _link_ids_by_name(cache: "FeishuUserCache") -> None:
+    """将同名的 open_id 和 user_id 记录互绑 linked_id。"""
+    try:
+        import sqlite3
+        with sqlite3.connect(cache.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT open_id, name, linked_id FROM feishu_users").fetchall()
+            
+            # 按 name 分组
+            by_name: dict[str, list[str]] = {}
+            for r in rows:
+                by_name.setdefault(r["name"], []).append(r["open_id"])
+            
+            # 同名且一个 ou_ 一个非 ou_ → 互绑
+            for name, ids in by_name.items():
+                ou_ids = [i for i in ids if i.startswith("ou_")]
+                other_ids = [i for i in ids if not i.startswith("ou_")]
+                for ou in ou_ids:
+                    for other in other_ids:
+                        conn.execute(
+                            "UPDATE feishu_users SET linked_id = ? WHERE open_id = ? AND (linked_id IS NULL OR linked_id = '')",
+                            (other, ou),
+                        )
+                        conn.execute(
+                            "UPDATE feishu_users SET linked_id = ? WHERE open_id = ? AND (linked_id IS NULL OR linked_id = '')",
+                            (ou, other),
+                        )
+            conn.commit()
+    except Exception:
+        _logger.debug("[FeishuUserCache] _link_ids_by_name failed", exc_info=True)
