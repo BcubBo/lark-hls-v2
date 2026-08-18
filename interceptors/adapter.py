@@ -87,7 +87,10 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
             if eid:
                 # We're inside an agent message pipeline.
                 # If card was already sent, suppress the gateway's text reply.
-                if ctx.get("card_sent"):
+                # BUT: important system messages must NOT be suppressed.
+                _category = _classify_gateway_message(content)
+                _is_important = _category in ("slash", "error", "session")
+                if ctx.get("card_sent") and not _is_important:
                     try:
                         from gateway.platforms.base import SendResult
                         return SendResult(success=True)
@@ -119,7 +122,10 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
         # ── Fallback: _msg_ctx was cleaned up, but check if a card session is still active ──
         # Without this, the text reply falls through to gateway card path and creates
         # a duplicate static card below the streaming card.
-        if ctx is None:
+        # BUT: important system messages must NOT be suppressed.
+        _category = _classify_gateway_message(content) if ctx is None else None
+        _is_important_fallback = _category in ("slash", "error", "session") if _category else False
+        if ctx is None and not _is_important_fallback:
             try:
                 from ..controller import get_controller
                 _ctrl = get_controller()

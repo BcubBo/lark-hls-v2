@@ -706,8 +706,19 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
         # ── Temporarily replace Feishu adapter.send with card-sending version ──
         original_send = feishu_adapter.send
 
-        async def _card_sending_send(chat_id, content, **send_kwargs):
-            """Redirect Feishu adapter.send to CardKit card delivery."""
+        async def _card_sending_send(chat_id, content, *, metadata=None, **send_kwargs):
+            """Redirect Feishu adapter.send to CardKit card delivery.
+
+            ⚠️ 只拦截 cron 投递（metadata 含 job_id），agent 对话走原始路径。
+            _wrap_cron_deliver 替换的是实例级 adapter.send，cron 投递期间
+            （最长60s）所有调用都进这里。不区分会导致 agent 响应被套上
+            cron 卡片模板（绿色 header + "定时任务" footer）。
+            """
+            # ── 区分调用来源：cron 投递 vs agent 对话 ──
+            _md = metadata or {}
+            if "job_id" not in _md:
+                # 不是 cron 投递，走原始 adapter.send（agent 对话路径）
+                return await original_send(chat_id, content, metadata=metadata, **send_kwargs)
             try:
                 from ..controller import get_controller
                 ctrl = get_controller()
