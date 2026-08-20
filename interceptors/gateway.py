@@ -134,10 +134,6 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
         }
         _msg_ctx.set(msg_context)
 
-        # sender 信息已通过 _msg_ctx contextvar 传递给 mem0x
-        # mem0x 的 _get_sender_context() 在 prefetch 阶段自动缓存到 _sender_context_cache
-        # 无需在此主动调用 mem0x（加载顺序问题会导致 import 失败）
-
         # v1.3.4 fix (P1): 确保 orig() 抛异常时 _msg_ctx / _started_msg_ids 被清理。
         # 不清理会导致 _msg_ctx 保留 stale event_message_id，下一条消息的
         # FeishuAdapter.send() 被静默抑制（"卡片不出现" bug）。
