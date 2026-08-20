@@ -117,6 +117,8 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
             )
         except Exception:
             _logger.warning("HLS: suppressed exception", exc_info=True)
+        # 提取 sender 信息，供 mem0x 插件使用（记忆溯源+用户隔离）
+        _platform = getattr(source, "platform", None)
         msg_context = {
             "message_id": mid,
             "chat_id": chat_id,
@@ -124,8 +126,17 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
             "event_message_id": "",  # filled by _wrap_run_agent
             "card_sent": False,
             "_msg_start_time": time.monotonic(),  # 自计时：替代无法获取的 _response_time 局部变量
+            # 记忆溯源+用户隔离字段
+            "user_id": getattr(source, "user_id", "") or "",
+            "user_name": getattr(source, "user_name", "") or "",
+            "chat_type": getattr(source, "chat_type", "dm") or "dm",
+            "platform": _platform.value if _platform else "",
         }
         _msg_ctx.set(msg_context)
+
+        # sender 信息已通过 _msg_ctx contextvar 传递给 mem0x
+        # mem0x 的 _get_sender_context() 在 prefetch 阶段自动缓存到 _sender_context_cache
+        # 无需在此主动调用 mem0x（加载顺序问题会导致 import 失败）
 
         # v1.3.4 fix (P1): 确保 orig() 抛异常时 _msg_ctx / _started_msg_ids 被清理。
         # 不清理会导致 _msg_ctx 保留 stale event_message_id，下一条消息的
