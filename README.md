@@ -166,4 +166,4 @@ MIT License
 
 ## 作者
 
-Amaterasu (何博洋)
+boyang
