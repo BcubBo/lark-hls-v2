@@ -46,9 +46,103 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 - **限流保护**：每个 chat_id 每 5 分钟最多同步一次，失败后 10 分钟重试
 
 ### 用户权限系统
-- **系统角色注入**：`admin:何博洋` 格式注入 `source.user_name`，AI 可直接识别权限
+- **系统角色注入**：`admin:<用户名>` 格式注入 `source.user_name`，AI 可直接识别权限
 - **SQLite 缓存**：`feishu_users` 表缓存 open_id→name 映射，contact API 失败时 fallback
 - **三级优先级**：`manual > auto > api`，手动设置不被自动覆盖
+
+## 完整配置项
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `enabled` | `true` | 启用插件 |
+| `linear` | `true` | 线性模式（单卡片流式） |
+| `gateway_cards` | `true` | Gateway 卡片投递 |
+| `print_strategy` | `delay` | 打字策略：`fast` 或 `delay` |
+| `print_step` | `5` | 每次输出字符数（1-10） |
+| `flush_interval_ms` | `180` | 流式更新间隔（70-2000ms） |
+| `card_ttl_sec` | `600` | 卡片存活时间（秒） |
+| `speed_curve` | `flat` | 打字速度曲线：`flat` 或 `answer_fast` |
+| `answer_fast_stream_ms` | `150` | 回答阶段加速间隔 |
+| `panel_expanded` | `true` | 面板默认是否展开 |
+| `streaming_panel_expanded` | `true` | 流式时面板是否展开 |
+| `auto_collapse_threshold` | `10` | 子元素超此数自动折叠（0=不折叠） |
+| `panel_border_color` | `green` | 面板边框颜色 |
+| `panel_header_color` | `green` | 面板标题颜色 |
+| `show_reasoning` | `true` | 是否显示推理过程 |
+| `max_tool_steps` | `20` | 最大工具步数 |
+| `max_reasoning_rounds` | `20` | 最大推理轮数 |
+| `panel_title` | `agent loop` | 面板标题 |
+| `loading_text` | `正在加载上下文...` | 加载提示文案 |
+| `thinking_text` | `正在思考...` | 思考提示文案 |
+| `footer.show_label` | `true` | 是否显示字段标签 |
+| `footer.fields` | 3 行布局 | Footer 字段布局（2D 数组） |
+| `card_header.title` | `""` | Card Header 标题 |
+| `card_header.subtitle` | `""` | Card Header 副标题 |
+| `card_header.icon` | `info_outlined` | Header 图标 token |
+| `card_header.template` | `green` | Header 背景色（12 种可选） |
+| `card_header.dynamic_quotes_enabled` | `true` | 动态台词开关 |
+| `card_header.dynamic_quotes_cooldown` | `2.0` | 台词切换冷却（秒） |
+
+## 动态台词系统
+
+插件内置二次元台词库，根据对话场景自动切换卡片标题和面板标题。
+
+### 工作原理
+
+| 组件 | 效果 | 示例 |
+|------|------|------|
+| **Card Header** | 完整台词+角色+作品 | "说到做到，这就是我的忍道！ —— 鸣人「火影忍者」" |
+| **Panel Title** | 短语气词+统计 | "冲啊 · 2 轮 · 用了 3 个工具 · 1.2s" |
+| **Seal 结束语** | 封印时随机结束语 | "收工" / "溜了溜了" / "编不下去了" |
+
+### 场景检测
+
+| 场景 | 触发条件 | 示例 |
+|------|----------|------|
+| `greeting` | 新会话 | "来了" / "上吧" |
+| `thinking` | 推理中 | "想想" / "灵感来了" |
+| `battle` | 工具调用中 | "冲啊" / "开干" |
+| `victory` | 完成 | "搞定" / "拿下了" |
+| `defeat` | 出错 | "翻车了" / "寄了" |
+| `eating` | 等待中 | "稍等" / "泡杯茶" |
+| `casual` | 普通对话 | "嘛" / "嗯" |
+| `seal` | 卡片封印 | "收工" / "溜了" / "臣告退" |
+
+### 自定义台词
+
+台词库文件：`card/quotes_data.json`
+
+```json
+{
+  "scenes": {
+    "greeting": [
+      {"text": "台词原文", "character": "角色名", "source": "作品名"}],
+    "thinking": [], "battle": [], "victory": [],
+    "defeat": [], "eating": [], "casual": []
+  },
+  "mood_expressions": {
+    "greeting": [], "thinking": [], "battle": [], "victory": [],
+    "defeat": [], "eating": [], "casual": []
+  },
+  "seal_endings": []
+}
+```
+
+- `scenes` — 完整台词，用于 Card Header（带角色和作品出处）
+- `mood_expressions` — 短语气词，用于 Panel Title（2-4 字）
+- `seal_endings` — 封印结束语（随机选取）
+- 修改后 5 分钟内自动热重载，无需重启
+- Card Header 台词自动保证同源间隔（同一部动漫的台词至少间隔 5 次才会再次出现）
+
+## 颜色配置
+
+### Card Header 背景色
+
+`blue` / `green` / `orange` / `red` / `purple` / `indigo` / `turquoise` / `yellow` / `grey` / `violet` / `wathet` / `carmine`
+
+### 面板边框/标题颜色
+
+`grey` / `blue` / `green` / `orange` / `red`
 
 ## 文件结构
 
@@ -81,7 +175,7 @@ lark-hls-v2/
 │   └── controller.py           # Flush 控制器
 ├── state/
 │   ├── session.py              # CardSession 状态管理
-│   └── ...                     # 其他状态模块
+│   └── ...
 ├── config/
 │   ├── defaults.py             # 默认配置
 │   └── schema.py               # 配置 schema
@@ -163,7 +257,6 @@ plugins:
 ## 许可证
 
 MIT License
-
 ## 作者
 
 boyang
