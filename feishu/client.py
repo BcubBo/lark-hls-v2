@@ -137,6 +137,7 @@ CARDKIT_STREAMING_CLOSED = 300309  # 卡片流式模式已关闭
 CARDKIT_SEQUENCE_CONFLICT = 300317  # sequence 冲突
 CARDKIT_ELEMENT_NOT_FOUND = 300313  # 元素不存在（add_elements 后服务端尚未持久化时的竞态）
 CARDKIT_ELEMENT_NOT_FOUND_ALT = 300314  # delete_elements 不存在的元素
+CARDKIT_CARD_TOO_LARGE = 200860  # 卡片总大小超过 30KB 限制
 MSG_NOT_FOUND = 1000023  # 消息不存在/已删除
 
 # v1.3.1 fix: 300315 错误码有两种含义：

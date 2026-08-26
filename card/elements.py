@@ -217,6 +217,7 @@ def _streaming_element(content: str = "", *, element_id: str = STREAMING_ELEMENT
         "tag": "markdown",
         "content": content,
         "element_id": element_id,
+        "text_size": "normal",
     }
 
 def _loading_element() -> dict:
@@ -364,10 +365,122 @@ def _truncate_reasoning(text: str) -> str:
         return text
     suffix = "\n\n... (已截断，共 {} 字)".format(len(text))
     return text[:_REASONING_DISPLAY_LIMIT - len(suffix)] + suffix
+# ================================================================
+# ▍_build_reasoning_round_panel — 单轮推理的嵌套折叠面板
+# 每个推理轮次包进独立 collapsible_panel，默认折叠（已完成）或展开（进行中）
+# ================================================================
+def _build_reasoning_round_panel(
+    round_index: int,
+    elapsed_ms: float,
+    text: str,
+    *,
+    finalized: bool = True,
+    failed: bool = False,
+) -> dict:
+    """为单轮推理构建嵌套 collapsible_panel。"""
+    if failed:
+        color = "red"
+        status_text = "失败"
+    elif finalized:
+        color = "green"
+        status_text = "已完成"
+    else:
+        color = "orange-300"
+        status_text = "进行中"
 
-def build_panel_children(*, reasoning_rounds: list, current_reasoning_text: str = "", tool_steps: list[dict], show_reasoning: bool = True, panel_events: list[tuple[str, int]] | None = None, max_tool_steps: int = 20, max_reasoning_rounds: int = 20) -> list[dict]:
+    en_label, zh_label = _T["round_n"]
+    title_text = zh_label.format(round_index)
+    elapsed = _format_elapsed(elapsed_ms) if elapsed_ms > 0 else ""
+    if elapsed:
+        title_text += f" · {elapsed}"
+    title_text += f" · {status_text}"
+
+    header_content = f"<font color='{color}'>**{title_text}**</font>"
+    title_el = {
+        "tag": "lark_md",
+        "content": header_content,
+        "text_size": "notation",
+    }
+
+    elements: list[dict] = []
+    if text.strip():
+        elements.append({
+            "tag": "markdown",
+            "content": _truncate_reasoning(text),
+            "text_size": "notation",
+        })
+    else:
+        elements.append({"tag": "markdown", "content": " "})
+
+    return _collapsible_panel(
+        expanded=not finalized,  # 已完成折叠，进行中展开
+        title_el=title_el,
+        elements=elements,
+        border_color=color,
+        header_color=color,
+    )
+
+
+# ================================================================
+# ▍_build_reasoning_batch_panel — 推理轮次分批折叠面板
+# 多轮推理打包成一个 collapsible_panel，减少元素数开销
+# ================================================================
+def _build_reasoning_batch_panel(
+    rounds: list,
+    *,
+    batch_start: int,
+    batch_end: int,
+) -> dict:
+    """将一批已完成的推理轮次打包成单个折叠面板。
+
+    rounds: ReasoningRound 列表（已切片到本批次范围）
+    batch_start: 本批次起始轮次号（1-based）
+    batch_end: 本批次结束轮次号（1-based, inclusive）
+    """
+    total_elapsed = sum(r.elapsed_ms for r in rounds)
+    elapsed_str = f" · {_format_elapsed(total_elapsed)}" if total_elapsed > 0 else ""
+
+    if len(rounds) == 1:
+        title_text = f"推理 {batch_start}{elapsed_str}"
+    else:
+        title_text = f"推理 {batch_start}-{batch_end} · {len(rounds)} 轮{elapsed_str}"
+
+    header_content = f"<font color='green'>**{title_text}**</font>"
+    title_el = {
+        "tag": "lark_md",
+        "content": header_content,
+        "text_size": "notation",
+    }
+
+    # Build compact list of round summaries as markdown
+    lines: list[str] = []
+    for r in rounds:
+        r_elapsed = _format_elapsed(r.elapsed_ms) if r.elapsed_ms > 0 else ""
+        suffix = f" · {r_elapsed}" if r_elapsed else ""
+        # Show truncated preview of reasoning text
+        preview = r.text.strip().replace("\n", " ") if r.text.strip() else "(空)"
+        lines.append(f"**轮次 {r.index}**{suffix} — {preview}")
+
+    content = "\n".join(lines) if lines else " "
+    elements = [{"tag": "markdown", "content": content, "text_size": "notation"}]
+
+    return _collapsible_panel(
+        expanded=False,  # 批次面板默认折叠
+        title_el=title_el,
+        elements=elements,
+        border_color="green",
+        header_color="green",
+    )
+
+
+
+
+
+def build_panel_children(*, reasoning_rounds: list, current_reasoning_text: str = "", tool_steps: list[dict], show_reasoning: bool = True, panel_events: list[tuple[str, int]] | None = None, max_tool_steps: int = 20, max_reasoning_rounds: int = 20, reasoning_batch_size: int = 10) -> list[dict]:
     """Build child elements for unified panel body. Renders chronologically (panel_events)
-    or sequentially (fallback). Trims to max_* limits (Feishu 200-element cap)."""
+    or sequentially (fallback). Trims to max_* limits (Feishu 200-element cap).
+    Reasoning rounds are batched into groups of reasoning_batch_size, each group
+    wrapped in a single collapsible_panel (not one panel per round)."""
     trimmed_rounds = 0
     trimmed_tools = 0
 
@@ -412,44 +525,46 @@ def build_panel_children(*, reasoning_rounds: list, current_reasoning_text: str 
 
     if panel_events:
         rendered_tools: set[int] = set()
+        # Collect consecutive reasoning events for batching
+        pending_reasoning: list = []
+
+        def _flush_reasoning_batch():
+            """Flush collected reasoning rounds as a batch panel."""
+            if not pending_reasoning or not show_reasoning:
+                return
+            # Emit batch panels in chunks of reasoning_batch_size
+            for batch_start in range(0, len(pending_reasoning), reasoning_batch_size):
+                batch = pending_reasoning[batch_start:batch_start + reasoning_batch_size]
+                first_idx = batch[0][1]  # panel_events index
+                last_idx = batch[-1][1]
+                batch_rounds = [reasoning_rounds[kind_idx] for _, kind_idx in batch if kind_idx < len(reasoning_rounds)]
+                if batch_rounds:
+                    children.append(_build_reasoning_batch_panel(
+                        batch_rounds,
+                        batch_start=batch_rounds[0].index,
+                        batch_end=batch_rounds[-1].index,
+                    ))
+            pending_reasoning.clear()
+
         for kind, idx in panel_events:
             if kind == "reasoning" and show_reasoning and idx < len(reasoning_rounds):
-                round_ = reasoning_rounds[idx]
-                children.append(_build_reasoning_round_title(
-                    round_.index, round_.elapsed_ms, finalized=True,
-                ))
-                if round_.text.strip():
-                    children.append({
-                        "tag": "div",
-                        "margin": "0px 0px 0px 22px",
-                        "text": {
-                            "tag": "lark_md",
-                            "content": _truncate_reasoning(round_.text),
-                            "text_size": "notation",
-                        },
-                    })
+                pending_reasoning.append((kind, idx))
             elif kind == "tool" and idx < len(tool_steps):
                 if idx not in rendered_tools:
                     step = tool_steps[idx]
                     children.extend(_build_tool_step_elements(step))
                     rendered_tools.add(idx)
 
+        # Flush any remaining reasoning rounds
+        _flush_reasoning_batch()
+
         # In-progress reasoning.
         if current_reasoning_text and show_reasoning:
             in_progress_idx = num_rounds  # 1-based
-            children.append(_build_reasoning_round_title(
-                in_progress_idx, 0, finalized=False,
+            children.append(_build_reasoning_round_panel(
+                in_progress_idx, 0, current_reasoning_text,
+                finalized=False,
             ))
-            if current_reasoning_text.strip():
-                children.append({
-                    "tag": "div",
-                    "margin": "0px 0px 0px 22px",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": _truncate_reasoning(current_reasoning_text),
-                        "text_size": "notation",
-                    },
-                })
 
         # Remaining tool steps not in panel_events.
         for i, step in enumerate(tool_steps):
@@ -462,37 +577,22 @@ def build_panel_children(*, reasoning_rounds: list, current_reasoning_text: str 
             reasoning_rounds or current_reasoning_text
         )
         if has_reasoning:
-            for round_ in reasoning_rounds:
-                children.append(_build_reasoning_round_title(
-                    round_.index, round_.elapsed_ms, finalized=True,
+            # Batch finalized rounds into groups of reasoning_batch_size
+            for batch_start in range(0, len(reasoning_rounds), reasoning_batch_size):
+                batch = reasoning_rounds[batch_start:batch_start + reasoning_batch_size]
+                children.append(_build_reasoning_batch_panel(
+                    batch,
+                    batch_start=batch[0].index,
+                    batch_end=batch[-1].index,
                 ))
-                if round_.text.strip():
-                    children.append({
-                        "tag": "div",
-                        "margin": "0px 0px 0px 22px",
-                        "text": {
-                            "tag": "lark_md",
-                            "content": _truncate_reasoning(round_.text),
-                            "text_size": "notation",
-                        },
-                    })
 
             # In-progress reasoning.
             if current_reasoning_text:
                 in_progress_idx = num_rounds
-                children.append(_build_reasoning_round_title(
-                    in_progress_idx, 0, finalized=False,
+                children.append(_build_reasoning_round_panel(
+                    in_progress_idx, 0, current_reasoning_text,
+                    finalized=False,
                 ))
-                if current_reasoning_text.strip():
-                    children.append({
-                        "tag": "div",
-                        "margin": "0px 0px 0px 22px",
-                        "text": {
-                            "tag": "lark_md",
-                            "content": _truncate_reasoning(current_reasoning_text),
-                            "text_size": "notation",
-                        },
-                    })
 
         # Tool steps.
         for step in tool_steps:
@@ -503,7 +603,7 @@ def build_panel_children(*, reasoning_rounds: list, current_reasoning_text: str 
 
     return children
 
-def build_unified_panel(*, reasoning_rounds: list, current_reasoning_text: str = "", tool_steps: list[dict], tool_elapsed_ms: float = 0, show_reasoning: bool = True, expanded: bool = False, element_id: str | None = None, panel_events: list[tuple[str, int]] | None = None, max_tool_steps: int = 20, max_reasoning_rounds: int = 20, auto_collapse_threshold: int = 0, panel_quote: str = "") -> dict:
+def build_unified_panel(*, reasoning_rounds: list, current_reasoning_text: str = "", tool_steps: list[dict], tool_elapsed_ms: float = 0, show_reasoning: bool = True, expanded: bool = False, element_id: str | None = None, panel_events: list[tuple[str, int]] | None = None, max_tool_steps: int = 20, max_reasoning_rounds: int = 20, auto_collapse_threshold: int = 0, panel_quote: str = "", reasoning_batch_size: int = 10) -> dict:
     """Build full unified panel. Thin assembler over build_panel_header/children."""
     header = build_panel_header(
         reasoning_rounds=reasoning_rounds,
@@ -521,6 +621,7 @@ def build_unified_panel(*, reasoning_rounds: list, current_reasoning_text: str =
         panel_events=panel_events,
         max_tool_steps=max_tool_steps,
         max_reasoning_rounds=max_reasoning_rounds,
+        reasoning_batch_size=reasoning_batch_size,
     )
     
     # Auto-collapse if threshold exceeded

@@ -24,7 +24,10 @@
 """Unified linear state -- single-panel reasoning+tool tracking for linear mode."""
 
 from __future__ import annotations
+import logging
 import time
+
+_logger = logging.getLogger("lark_hls_v2")
 
 __all__ = [
     "ReasoningRound",
@@ -100,9 +103,7 @@ class UnifiedLinearState:
         谁调用：controller.on_reasoning()
         改动影响：去重逻辑改了会导致 post-stream 重复文本
         """
-        import logging as _logging
-        _diag_logger = _logging.getLogger("lark_hls_v2")
-        _diag_logger.debug(
+        _logger.debug(
             "HLS: on_reasoning_delta text=%r current_len=%d rounds=%d",
             text[:40] if text else "",
             len(self._current_reasoning),
@@ -115,7 +116,7 @@ class UnifiedLinearState:
             and len(text) >= len(self._current_reasoning)
             and text[:len(self._current_reasoning)] == self._current_reasoning
         ):
-            _diag_logger.debug(
+            _logger.debug(
                 "HLS: on_reasoning_delta skips post-stream duplicate "
                 "text_len=%d current_len=%d",
                 len(text), len(self._current_reasoning),

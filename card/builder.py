@@ -81,8 +81,7 @@ def _enforce_card_element_limit(
     threshold = _FEISHU_ELEMENT_LIMIT - _ELEMENT_LIMIT_MARGIN
     total = _count_tag_objects(card)
     if total <= threshold:
-        import logging as _dbg_log
-    return card
+        return card
 
     # ── 定位 unified panel ──
     body = card.get("body", {})

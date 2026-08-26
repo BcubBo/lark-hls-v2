@@ -102,6 +102,7 @@ class CardSession:
         "_streaming_closed",
         "_streaming_closed_logged",
         "_was_aborted",
+        "_answer_streamed",
     )
 
     def __init__(
@@ -156,6 +157,7 @@ class CardSession:
         self._streaming_closed: bool = False
         # v1.2.0 L1: "streaming closed" log dedup -- first time INFO, rest DEBUG
         self._streaming_closed_logged: bool = False
+        self._answer_streamed: bool = False
         self._card_ready: asyncio.Event = asyncio.Event()
         self._is_continuation: bool = False
         self._continuation_reactivation_count: int = 0

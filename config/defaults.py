@@ -43,6 +43,8 @@ SUMMARY_MAX_LENGTH: int = 120
 # Tool/rounding limits
 MAX_TOOL_STEPS: int = 20
 MAX_REASONING_ROUNDS: int = 20
+# Batch size for nested reasoning panels (each batch = 1 collapsible_panel)
+REASONING_BATCH_SIZE: int = 10
 
 # ---------------------------------------------------------------------------
 # Reasoning
@@ -85,7 +87,7 @@ AUTO_COLLAPSE_THRESHOLD: int = 10
 SPEED_CURVE: str = "flat"
 
 # Answer-only throttle interval in ms (faster streaming for answers)
-ANSWER_FAST_STREAM_MS: float = 150.0
+ANSWER_FAST_STREAM_MS: float = 300.0
 
 # Panel border color: "grey", "blue", "green", "orange", "red"
 PANEL_BORDER_COLOR: str = "green"

@@ -69,6 +69,8 @@ __all__ = [
     "_split_long_text",
     "_strip_invalid_image_keys",
     "escape_markdown_asterisks",
+    "compress_newlines",
+    "truncate_unclosed_markdown",
     "optimize_markdown_style",
 ]
 
@@ -225,6 +227,57 @@ def optimize_markdown_style(text: str) -> str:
     except Exception:
         _logger.debug("optimize_markdown_style failed", exc_info=True)
         return text
+
+
+def compress_newlines(text: str) -> str:
+    """压缩连续空行（3+换行→2换行），流式阶段使用。
+    保留 \n\n 段落分隔，只去掉多余的空行。"""
+    if "\n\n\n" not in text:
+        return text
+    return _RE_MULTI_NEWLINE.sub("\n\n", text)
+
+
+
+def truncate_unclosed_markdown(text: str) -> str:
+    """截断未闭合的 Markdown 成对标记，避免飞书渲染异常。
+    流式阶段每次 flush 前调用，保证推送的文本格式完整。
+    被截断的部分在下次 flush 时自然补齐（answer_text 是全量文本）。"""
+    if not text:
+        return text
+
+    # Count opening vs closing markers from the end
+    # Strategy: scan from end, find last complete closing point
+    result = text
+
+    # Check ** (bold) — must appear in pairs
+    bold_count = result.count("**")
+    if bold_count % 2 != 0:
+        # Odd number of ** — find the last unclosed **
+        last_open = result.rfind("**")
+        if last_open >= 0:
+            result = result[:last_open]
+
+    # Check * (italic) — but not ** (already handled)
+    # After removing **, count remaining single *
+    # Simple approach: if result ends with lone *, truncate
+    if result.endswith("*") and not result.endswith("**"):
+        result = result[:-1]
+
+    # Check ` (inline code) — must appear in pairs
+    backtick_count = result.count("`")
+    if backtick_count % 2 != 0:
+        last_open = result.rfind("`")
+        if last_open >= 0:
+            result = result[:last_open]
+
+    # Check ``` (fenced code block) — must appear in pairs
+    fenced_count = result.count("```")
+    if fenced_count % 2 != 0:
+        last_open = result.rfind("```")
+        if last_open >= 0:
+            result = result[:last_open]
+
+    return result if result else text
 
 
 def _split_long_text(text: str, limit: int = _MAX_CHUNK_CHARS) -> list[str]:

@@ -66,6 +66,8 @@ class QuoteManager:
 
     def __init__(self) -> None:
         self._quotes: dict[str, list[dict[str, str]]] = {}
+        self._moods: dict[str, list[str]] = {}  # P1-1: cached mood expressions
+        self._seal_endings: list[str] = []  # P1-1: cached seal endings
         self._shuffled: dict[str, list[int]] = {}  # scene -> shuffled index queue
         self._recent_sources: dict[str, deque[str]] = {}  # scene -> recent source names
         self._last_load_time: float = 0
@@ -81,6 +83,8 @@ class QuoteManager:
             with open(_QUOTES_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             self._quotes = data.get("scenes", {})
+            self._moods = data.get("mood_expressions", {})
+            self._seal_endings = data.get("seal_endings", [])
             self._last_load_time = time.monotonic()
             total = sum(len(v) for v in self._quotes.values())
             _logger.info("Loaded %d quotes across %d scenes", total, len(self._quotes))
@@ -219,17 +223,9 @@ class QuoteManager:
         if scene == "seal":
             return self.get_seal_ending()
 
-        # Load mood_expressions from JSON (separate key from scenes)
-        moods: dict[str, list[str]] = {}
-        try:
-            with open(_QUOTES_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            moods = data.get("mood_expressions", {})
-        except Exception:
-            pass
-
+        # P1-1: Use cached moods instead of reading file each time
         category = _SCENE_MAP.get(scene, "casual")
-        expressions = moods.get(category, [])
+        expressions = self._moods.get(category, [])
         if not expressions:
             expressions = moods.get("casual", [])
         if not expressions:
@@ -251,13 +247,8 @@ class QuoteManager:
         """
         self._maybe_reload()
 
-        endings: list[str] = []
-        try:
-            with open(_QUOTES_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            endings = data.get("seal_endings", [])
-        except Exception:
-            pass
+        # P1-1: Use cached seal_endings instead of reading file each time
+        endings = self._seal_endings
 
         if not endings:
             return ""

@@ -51,8 +51,11 @@ __all__ = [
 import json
 import os
 import re
+import logging
 import time
 from dataclasses import dataclass, field
+
+_logger = logging.getLogger("lark_hls_v2")
 from typing import Any
 
 # ▍数据类
@@ -310,6 +313,10 @@ class ToolUseTracker:
                 elif output:
                     step.result_block = _build_display_block(output, "json", sanitizer=sanitizer)
                 return
+        _logger.warning(
+            "ToolUseTracker.record_end: no running step found for %r, "
+            "appending orphan step (steps=%d)", name, len(self._session.steps),
+        )
         self._session.steps.append(
             ToolStep(
                 name=name,

@@ -169,6 +169,11 @@ class Config:
         return max(1, min(100, val))
 
     @property
+    def reasoning_batch_size(self) -> int:
+        val = _to_int(self._plugin_sec().get("reasoning_batch_size", defaults.REASONING_BATCH_SIZE), default=defaults.REASONING_BATCH_SIZE)
+        return max(1, min(50, val))
+
+    @property
     def print_strategy(self) -> str:
         strategy = self._plugin_sec().get("print_strategy", defaults.PRINT_STRATEGY)
         return strategy if strategy in ("fast", "delay") else defaults.PRINT_STRATEGY

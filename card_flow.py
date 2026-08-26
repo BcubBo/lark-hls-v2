@@ -60,7 +60,7 @@ from .card import (
     _enforce_card_element_limit,
 )
 from .card.builder import _FEISHU_ELEMENT_LIMIT, _ELEMENT_LIMIT_MARGIN
-from .card.md import _downgrade_tables, escape_markdown_asterisks, optimize_markdown_style
+from .card.md import _downgrade_tables, _split_long_text, compress_newlines, escape_markdown_asterisks, optimize_markdown_style, truncate_unclosed_markdown
 from .state.linear import UnifiedLinearState
 from .state.text import split_reasoning_text
 from .card.quotes import QuoteManager
@@ -78,6 +78,7 @@ from .state.phase import TerminalReason
 from .feishu import (
     CARDKIT_SCHEMA_ERROR,
     CARDKIT_SEQUENCE_CONFLICT,
+    CARDKIT_CARD_TOO_LARGE,
     CARDKIT_STREAMING_CLOSED,
     FeishuAPIError,
     is_element_not_found_error,
@@ -214,7 +215,42 @@ class UnifiedControllerMixin:
             )
             return qm.get_mood(scene)
         except Exception:
-            return "" 
+            return ""
+
+    def _build_panel(
+        self,
+        session: CardSession,
+        state: UnifiedLinearState,
+        *,
+        expanded: bool | None = None,
+        current_reasoning_text: str | None = None,
+        is_sealing: bool = False,
+    ) -> dict:
+        """Build a unified panel from session/state with config defaults.
+
+        Callers only need to pass overrides that differ from the streaming defaults.
+        """
+        all_tool_steps = session.tool_use.build_display_steps()
+        return build_unified_panel(
+            reasoning_rounds=state.reasoning_rounds,
+            current_reasoning_text=(
+                state.current_reasoning_text if current_reasoning_text is None
+                else current_reasoning_text
+            ),
+            tool_steps=all_tool_steps,
+            tool_elapsed_ms=session.tool_use.elapsed_ms,
+            show_reasoning=self._cfg.show_reasoning,
+            expanded=(
+                self._cfg.streaming_panel_expanded if expanded is None
+                else expanded
+            ),
+            panel_events=state.panel_events,
+            max_tool_steps=self._cfg.max_tool_steps,
+            max_reasoning_rounds=self._cfg.max_reasoning_rounds,
+            reasoning_batch_size=self._cfg.reasoning_batch_size,
+            auto_collapse_threshold=self._cfg.auto_collapse_threshold,
+            panel_quote=self._get_panel_quote(session, is_sealing=is_sealing),
+        )
 
     async def _do_create_linear_card(self, session: CardSession) -> None:
         """Create the initial placeholder card — loading hint only, no panel."""
@@ -386,20 +422,7 @@ class UnifiedControllerMixin:
 
             # ── Path A: Has reasoning or tools → add unified panel ──
             if state.panel_visible:
-                all_tool_steps = session.tool_use.build_display_steps()
-                panel = build_unified_panel(
-                    reasoning_rounds=state.reasoning_rounds,
-                    current_reasoning_text=state.current_reasoning_text,
-                    tool_steps=all_tool_steps,
-                    tool_elapsed_ms=session.tool_use.elapsed_ms,
-                    show_reasoning=self._cfg.show_reasoning,
-                    expanded=self._cfg.streaming_panel_expanded,
-                    panel_events=state.panel_events,
-                    max_tool_steps=self._cfg.max_tool_steps,
-                    max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session),
-                )
+                panel = self._build_panel(session, state)
                 new_elements.append(panel)
 
             # ── Path A & B: Always add answer streaming element ──
@@ -499,12 +522,13 @@ class UnifiedControllerMixin:
 
             # Note: skip markdown optimization during streaming for performance;
             if state.answer_dirty:
-                content = escape_markdown_asterisks(state.answer_text or " ")
+                content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
                 session.sequence += 1
                 try:
                     await self._client.cardkit_stream_element(
                         session.card_id, ANSWER_ELEMENT_ID, content, sequence=session.sequence,
                     )
+                    session._answer_streamed = True
                     state.answer_dirty = False
                 except FeishuAPIError as e:
                     if e.code == CARDKIT_STREAMING_CLOSED:
@@ -519,20 +543,7 @@ class UnifiedControllerMixin:
         if state.panel_dirty:
             if "panel" in session._creation_stages:
                 # Panel exists — update its content
-                all_tool_steps = session.tool_use.build_display_steps()
-                panel = build_unified_panel(
-                    reasoning_rounds=state.reasoning_rounds,
-                    current_reasoning_text=state.current_reasoning_text,
-                    tool_steps=all_tool_steps,
-                    tool_elapsed_ms=session.tool_use.elapsed_ms,
-                    show_reasoning=self._cfg.show_reasoning,
-                    expanded=self._cfg.streaming_panel_expanded,
-                    panel_events=state.panel_events,
-                    max_tool_steps=self._cfg.max_tool_steps,
-                    max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session),
-                )
+                panel = self._build_panel(session, state)
                 actions.append({
                     "action": "partial_update_element",
                     "params": {
@@ -545,20 +556,7 @@ class UnifiedControllerMixin:
                 })
             elif "answer" in session._creation_stages:
                 # ── Bug fix (v1.0.5): Late-arriving reasoning/tools ──
-                all_tool_steps = session.tool_use.build_display_steps()
-                panel = build_unified_panel(
-                    reasoning_rounds=state.reasoning_rounds,
-                    current_reasoning_text=state.current_reasoning_text,
-                    tool_steps=all_tool_steps,
-                    tool_elapsed_ms=session.tool_use.elapsed_ms,
-                    show_reasoning=self._cfg.show_reasoning,
-                    expanded=self._cfg.streaming_panel_expanded,
-                    panel_events=state.panel_events,
-                    max_tool_steps=self._cfg.max_tool_steps,
-                    max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session),
-                )
+                panel = self._build_panel(session, state)
                 actions.append({
                     "action": "add_elements",
                     "params": {
@@ -638,32 +636,71 @@ class UnifiedControllerMixin:
 
         # Note: skip markdown optimization during streaming for performance;
         if state.answer_dirty and "answer" in session._creation_stages:
-            content = escape_markdown_asterisks(state.answer_text or " ")
+            content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
             session.sequence += 1
-            try:
-                await self._client.cardkit_stream_element(
-                    session.card_id, ANSWER_ELEMENT_ID, content, sequence=session.sequence,
-                )
-                state.answer_dirty = False
-            except FeishuAPIError as e:
-                if e.code == CARDKIT_STREAMING_CLOSED:
-                    if session._streaming_closed_logged:
-                        pass
-                    else:
+            # v2.9.1: First push uses stream_element (typewriter), subsequent
+            # updates use partial_update_element (instant replace) to avoid
+            # typewriter animation reset causing text fragmentation.
+            if session._answer_streamed:
+                # Subsequent updates — instant replace, no typewriter reset
+                try:
+                    await self._client.cardkit_batch_update(
+                        session.card_id,
+                        [{
+                            "action": "partial_update_element",
+                            "params": {
+                                "element_id": ANSWER_ELEMENT_ID,
+                                "partial_element": {"content": content},
+                            },
+                        }],
+                        sequence=session.sequence,
+                    )
+                    state.answer_dirty = False
+                except FeishuAPIError as e:
+                    if e.code == CARDKIT_STREAMING_CLOSED:
+                        if session._streaming_closed_logged:
+                            pass
+                        else:
+                            _logger.info(
+                                "HLS: unified partial_update — streaming closed, will be handled by TTL or seal: card=%s",
+                                session.card_id[:12],
+                            )
+                            session._streaming_closed_logged = True
+                        session._streaming_closed = True
+                        return
+                    if is_element_not_found_error(e):
                         _logger.info(
-                            "HLS: unified stream — streaming closed, will be handled by TTL or seal: card=%s",
+                            "HLS: unified partial_update — 300313, will retry on next flush: card=%s",
                             session.card_id[:12],
                         )
-                        session._streaming_closed_logged = True
-                    session._streaming_closed = True
-                    return
-                if is_element_not_found_error(e):
-                    _logger.info(
-                        "HLS: unified stream — 300313, will retry on next flush: card=%s",
-                        session.card_id[:12],
+                        return
+                    _logger.debug("HLS: unified partial_update failed: %s", e)
+            else:
+                # First push — stream_element for typewriter effect
+                try:
+                    await self._client.cardkit_stream_element(
+                        session.card_id, ANSWER_ELEMENT_ID, content, sequence=session.sequence,
                     )
-                    return
-                _logger.debug("HLS: unified stream_element failed: %s", e)
+                    state.answer_dirty = False
+                except FeishuAPIError as e:
+                    if e.code == CARDKIT_STREAMING_CLOSED:
+                        if session._streaming_closed_logged:
+                            pass
+                        else:
+                            _logger.info(
+                                "HLS: unified stream — streaming closed, will be handled by TTL or seal: card=%s",
+                                session.card_id[:12],
+                            )
+                            session._streaming_closed_logged = True
+                        session._streaming_closed = True
+                        return
+                    if is_element_not_found_error(e):
+                        _logger.info(
+                            "HLS: unified stream — 300313, will retry on next flush: card=%s",
+                            session.card_id[:12],
+                        )
+                        return
+                    _logger.debug("HLS: unified stream_element failed: %s", e)
 
         if state.panel_dirty or state.answer_dirty or state.tool_steps_dirty:
             self._schedule_linear_flush(session)
@@ -773,20 +810,7 @@ class UnifiedControllerMixin:
                 )
                 # ── Flush remaining panel content ──
                 if (state.panel_dirty or state.tool_steps_dirty) and "panel" in session._creation_stages:
-                    all_tool_steps = session.tool_use.build_display_steps()
-                    panel = build_unified_panel(
-                        reasoning_rounds=state.reasoning_rounds,
-                        current_reasoning_text=state.current_reasoning_text,
-                        tool_steps=all_tool_steps,
-                        tool_elapsed_ms=session.tool_use.elapsed_ms,
-                        show_reasoning=self._cfg.show_reasoning,
-                        expanded=self._cfg.streaming_panel_expanded,
-                        panel_events=state.panel_events,
-                        max_tool_steps=self._cfg.max_tool_steps,
-                        max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session),
-                    )
+                    panel = self._build_panel(session, state)
                     try:
                         session.sequence += 1
                         await self._client.cardkit_batch_update(
@@ -816,15 +840,24 @@ class UnifiedControllerMixin:
 
                 # ── Flush remaining answer text ──
                 if state.answer_dirty and "answer" in session._creation_stages and not session._streaming_closed:
-                    content = escape_markdown_asterisks(state.answer_text or " ")
+                    content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
                     try:
                         session.sequence += 1
                         _logger.info(
                             "HLS: seal drain answer text len=%d card=%s",
                             len(content), card_id[:12],
                         )
-                        await self._client.cardkit_stream_element(
-                            session.card_id, ANSWER_ELEMENT_ID, content,
+                        # v2.9.1: Use partial_update_element during seal drain
+                        # to avoid typewriter reset on final content push.
+                        await self._client.cardkit_batch_update(
+                            session.card_id,
+                            [{
+                                "action": "partial_update_element",
+                                "params": {
+                                    "element_id": ANSWER_ELEMENT_ID,
+                                    "partial_element": {"content": content},
+                                },
+                            }],
                             sequence=session.sequence,
                         )
                         state.answer_dirty = False
@@ -856,19 +889,11 @@ class UnifiedControllerMixin:
 
                 # ── Bug fix (v1.0.5): Only update panel if it was created ──
                 if "panel" in session._creation_stages:
-                    all_tool_steps = session.tool_use.build_display_steps()
-                    panel = build_unified_panel(
-                        reasoning_rounds=state.reasoning_rounds,
-                        current_reasoning_text="",
-                        tool_steps=all_tool_steps,
-                        tool_elapsed_ms=session.tool_use.elapsed_ms,
-                        show_reasoning=self._cfg.show_reasoning,
+                    panel = self._build_panel(
+                        session, state,
                         expanded=self._cfg.panel_expanded,
-                        panel_events=state.panel_events,
-                        max_tool_steps=self._cfg.max_tool_steps,
-                        max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session, is_sealing=True),
+                        current_reasoning_text="",
+                        is_sealing=True,
                     )
                     seal_actions.append({
                         "action": "partial_update_element",
@@ -885,15 +910,43 @@ class UnifiedControllerMixin:
             # guard) is a minor visual issue; content truncation is a P0 data-loss bug.
             if state is not None and state.answer_text and "answer" in session._creation_stages:
                 optimized_content = escape_markdown_asterisks(_downgrade_tables(optimize_markdown_style(state.answer_text))) or " "
-                seal_actions.append({
-                    "action": "partial_update_element",
-                    "params": {
-                        "element_id": ANSWER_ELEMENT_ID,
-                        "partial_element": {
-                            "content": optimized_content,
+                # v2.0.5.0: Feishu card has a 30KB total size limit. Split long
+                # answers into multiple markdown elements to avoid truncation.
+                _ANSWER_BYTES_LIMIT = 20000  # ~20KB, leave headroom for panel+footer
+                if len(optimized_content.encode("utf-8")) > _ANSWER_BYTES_LIMIT:
+                    chunks = _split_long_text(optimized_content, limit=4000)
+                    # First chunk updates existing answer element
+                    seal_actions.append({
+                        "action": "partial_update_element",
+                        "params": {
+                            "element_id": ANSWER_ELEMENT_ID,
+                            "partial_element": {"content": chunks[0]},
                         },
-                    },
-                })
+                    })
+                    # Extra chunks inserted as new markdown elements
+                    if len(chunks) > 1:
+                        extra_elements = [
+                            {"tag": "markdown", "content": c}
+                            for c in chunks[1:]
+                        ]
+                        seal_actions.append({
+                            "action": "add_elements",
+                            "params": {
+                                "type": "insert_after",
+                                "target_element_id": ANSWER_ELEMENT_ID,
+                                "elements": extra_elements,
+                            },
+                        })
+                else:
+                    seal_actions.append({
+                        "action": "partial_update_element",
+                        "params": {
+                            "element_id": ANSWER_ELEMENT_ID,
+                            "partial_element": {
+                                "content": optimized_content,
+                            },
+                        },
+                    })
 
             # ── Step 3: Add footer + delete loading elements ──
             seal_actions.extend(
@@ -1057,19 +1110,11 @@ class UnifiedControllerMixin:
                         if state is not None:
                             # ── Bug fix (v1.0.5): Only update panel if it was created ──
                             if "panel" in session._creation_stages:
-                                all_tool_steps = session.tool_use.build_display_steps()
-                                retry_panel = build_unified_panel(
-                                    reasoning_rounds=state.reasoning_rounds,
-                                    current_reasoning_text="",
-                                    tool_steps=all_tool_steps,
-                                    tool_elapsed_ms=session.tool_use.elapsed_ms,
-                                    show_reasoning=self._cfg.show_reasoning,
+                                retry_panel = self._build_panel(
+                                    session, state,
                                     expanded=self._cfg.panel_expanded,
-                                    panel_events=state.panel_events,
-                                    max_tool_steps=self._cfg.max_tool_steps,
-                                    max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session),
+                                    current_reasoning_text="",
+                                    is_sealing=True,
                                 )
                                 retry_actions.append({
                                     "action": "partial_update_element",
@@ -1192,20 +1237,7 @@ class UnifiedControllerMixin:
 
             # ── Drain panel content ──
             if state.panel_dirty and "panel" in session._creation_stages:
-                all_tool_steps = session.tool_use.build_display_steps()
-                panel = build_unified_panel(
-                    reasoning_rounds=state.reasoning_rounds,
-                    current_reasoning_text=state.current_reasoning_text,
-                    tool_steps=all_tool_steps,
-                    tool_elapsed_ms=session.tool_use.elapsed_ms,
-                    show_reasoning=self._cfg.show_reasoning,
-                    expanded=self._cfg.streaming_panel_expanded,
-                    panel_events=state.panel_events,
-                    max_tool_steps=self._cfg.max_tool_steps,
-                    max_reasoning_rounds=self._cfg.max_reasoning_rounds,
-                    auto_collapse_threshold=self._cfg.auto_collapse_threshold,
-                    panel_quote=self._get_panel_quote(session),
-                )
+                panel = self._build_panel(session, state)
                 drain_actions: list[dict[str, Any]] = [{
                     "action": "partial_update_element",
                     "params": {
@@ -1241,15 +1273,23 @@ class UnifiedControllerMixin:
 
             # ── Drain answer text ──
             if state.answer_dirty and "answer" in session._creation_stages:
-                content = escape_markdown_asterisks(state.answer_text or " ")
+                content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
                 try:
                     session.sequence += 1
                     _logger.info(
                         "HLS: drain answer text len=%d msg=%s",
                         len(content), (session.message_id or "?")[:12],
                     )
-                    await self._client.cardkit_stream_element(
-                        session.card_id, ANSWER_ELEMENT_ID, content,
+                    # v2.9.1: Use partial_update_element during drain
+                    await self._client.cardkit_batch_update(
+                        session.card_id,
+                        [{
+                            "action": "partial_update_element",
+                            "params": {
+                                "element_id": ANSWER_ELEMENT_ID,
+                                "partial_element": {"content": content},
+                            },
+                        }],
                         sequence=session.sequence,
                     )
                     state.answer_dirty = False

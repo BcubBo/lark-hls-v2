@@ -13,12 +13,16 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 - 工具调用面板（折叠/展开）
 - 封卡摘要（answer footer + 模型/耗时信息）
 - 元素数量自动降级（表格→文本，防止超 200 上限）
+- **嵌套折叠面板**：每轮推理独立 collapsible_panel，用户可按需展开查看
+- **批次面板分组**：已完成推理按批次（默认10轮/组）合并，减少面板高度
+- **答案质量优化**：流式阶段标题降级 + 未闭合 Markdown 标记截断，消除碎片闪烁
 
 ### 动态台词系统
 - Fisher-Yates 洗牌队列：一轮不重复，同源间隔 ≥ 5
 - 场景检测：greeting / thinking / battle / victory / defeat / seal
 - 语气词（panel 标题）+ 封印结束语
 - 台词库：`card/quotes_data.json`
+- **性能优化**：mood_expressions 和 seal_endings 缓存到实例属性，流式期间不再每次读文件
 
 ### 静态卡片
 - Cron 卡片：定时任务输出，footer 显示任务名称
@@ -36,7 +40,7 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 - `/stop` 命令停止流式
 - 子/父消息上下文切换
 
-### 群成员管理（v2.9.0+）
+### 群成员管理
 - **自动入库**：群消息到达时自动将发送者写入 `feishu_users` + `group_members` 表
 - **飞书 API 同步**：每 5 分钟拉取群成员列表，补齐 `feishu_role`（owner/admin/member）和 `chat_id`
 - **按群隔离**：`group_members` 关联表精确匹配 `(open_id, chat_id)`，支持同一用户在不同群有不同角色
@@ -62,7 +66,7 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 | `flush_interval_ms` | `180` | 流式更新间隔（70-2000ms） |
 | `card_ttl_sec` | `600` | 卡片存活时间（秒） |
 | `speed_curve` | `flat` | 打字速度曲线：`flat` 或 `answer_fast` |
-| `answer_fast_stream_ms` | `150` | 回答阶段加速间隔 |
+| `answer_fast_stream_ms` | `300` | 回答阶段加速间隔（v2.0.6.0 从150→300） |
 | `panel_expanded` | `true` | 面板默认是否展开 |
 | `streaming_panel_expanded` | `true` | 流式时面板是否展开 |
 | `auto_collapse_threshold` | `10` | 子元素超此数自动折叠（0=不折叠） |
@@ -71,6 +75,7 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 | `show_reasoning` | `true` | 是否显示推理过程 |
 | `max_tool_steps` | `20` | 最大工具步数 |
 | `max_reasoning_rounds` | `20` | 最大推理轮数 |
+| `reasoning_batch_size` | `10` | 推理轮次批次大小（v2.0.3.0+） |
 | `panel_title` | `agent loop` | 面板标题 |
 | `loading_text` | `正在加载上下文...` | 加载提示文案 |
 | `thinking_text` | `正在思考...` | 思考提示文案 |
@@ -82,6 +87,32 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 | `card_header.template` | `green` | Header 背景色（12 种可选） |
 | `card_header.dynamic_quotes_enabled` | `true` | 动态台词开关 |
 | `card_header.dynamic_quotes_cooldown` | `2.0` | 台词切换冷却（秒） |
+
+## 推理面板架构
+
+### 嵌套折叠面板（v2.0.2.0+）
+
+推理过程采用嵌套 `collapsible_panel` 结构：
+
+```
+外层 panel (agent_process_panel)
+  ├─ 批次面板: "推理1-10 · 10轮 · 5.2s" [默认折叠]
+  │   └─ 展开后: 每轮显示完整推理文本（轮次号+耗时+内容）
+  ├─ 批次面板: "推理11-20 · 10轮" [默认折叠]
+  └─ 当前轮次: 独立面板 [始终展开，显示进行中状态]
+```
+
+- 已完成轮次按 `reasoning_batch_size`（默认10）分组，每组一个折叠面板
+- 当前进行中的轮次始终展开，实时显示推理内容
+- 用户可点击任意批次面板查看历史推理详情
+
+### 答案输出优化（v2.0.7.0+）
+
+流式阶段对答案文本进行三重处理：
+
+1. **标题降级**：`optimize_markdown_style` 将 H1-H3 降级为 H4-H5，消除封卡时标题大小跳变
+2. **未闭合标记截断**：`truncate_unclosed_markdown` 检测并截断未闭合的 `**`/`*`/`` ` ``/```` ``` ```` 标记，避免飞书渲染异常
+3. **空行压缩**：`compress_newlines` 压缩 3+ 连续空行，保持段落结构
 
 ## 动态台词系统
 
@@ -117,12 +148,10 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
   "scenes": {
     "greeting": [
       {"text": "台词原文", "character": "角色名", "source": "作品名"}],
-    "thinking": [], "battle": [], "victory": [],
-    "defeat": [], "eating": [], "casual": []
+    "thinking": [], "battle": [], "victory": [], "defeat": [], "eating": [], "casual": []
   },
   "mood_expressions": {
-    "greeting": [], "thinking": [], "battle": [], "victory": [],
-    "defeat": [], "eating": [], "casual": []
+    "greeting": [], "thinking": [], "battle": [], "victory": [], "defeat": [], "eating": [], "casual": []
   },
   "seal_endings": []
 }
@@ -148,18 +177,17 @@ Hermes Agent 的飞书流式卡片插件。将 agent 的文本回复转为 CardK
 
 ```
 lark-hls-v2/
-├── plugin.yaml                 # 插件元数据
+├── plugin.yaml                 # 插件元数据（v2.0.7.0）
 ├── __init__.py                 # 版本 + apply_patches 入口
 ├── controller.py               # StreamCardController（卡片生命周期管理）
 ├── card_flow.py                # 流式卡片核心：flush/finalize/complete
 ├── card/
 │   ├── builder.py              # CardKit schema 构建
-│   ├── elements.py             # header/footer/loading/error 元素
-│   ├── quotes.py               # 动态台词系统（Fisher-Yates 洗牌）
+│   ├── elements.py             # panel/footer/loading/error 元素 + 嵌套面板
+│   ├── quotes.py               # 动态台词系统（Fisher-Yates 洗牌 + 缓存）
 │   ├── quotes_data.json        # 台词库
 │   ├── special.py              # cron/gateway/clarify 静态卡片
-│   ├── md.py                   # Markdown 优化
-│   └── quotes/                 # 台词资源目录
+│   └── md.py                   # Markdown 优化 + 未闭合标记截断
 ├── interceptors/
 │   ├── __init__.py             # 共享状态 + patch 管理
 │   ├── adapter.py              # FeishuAdapter 方法拦截
@@ -175,7 +203,9 @@ lark-hls-v2/
 │   └── controller.py           # Flush 控制器
 ├── state/
 │   ├── session.py              # CardSession 状态管理
-│   └── ...
+│   ├── linear.py               # 推理/工具/答案统一状态
+│   ├── tooluse.py              # 工具调用追踪
+│   └── phase.py                # 卡片生命周期阶段
 ├── config/
 │   ├── defaults.py             # 默认配置
 │   └── schema.py               # 配置 schema
@@ -204,7 +234,7 @@ CREATE TABLE feishu_users (
 );
 ```
 
-### group_members 表（v2.9.0+）
+### group_members 表
 ```sql
 CREATE TABLE group_members (
     open_id     TEXT NOT NULL,
@@ -237,26 +267,35 @@ plugins:
     enabled: true
     dynamic_quotes_enabled: true      # 动态台词（默认 true）
     streaming_panel_expanded: false   # 工具面板默认折叠
+    reasoning_batch_size: 10          # 推理轮次批次大小
+    answer_fast_stream_ms: 300        # 答案推送间隔（ms）
     gateway_cards: true               # 系统消息转卡片
-```
-
-## Cron 卡片
-
-定时任务输出自动转为 CardKit 卡片，footer 显示任务名称：
-
-```
-📌 定时任务 · 服务器健康巡检 · 14:30
 ```
 
 ## 已知限制
 
 - 飞书 CardKit 2.0 单卡片元素上限 200 个
+- 飞书整张卡片总大小上限 30KB（超限时封卡自动拆分答案）
 - 流式更新频率受飞书 API 限流（~5 次/秒）
 - 表格渲染在元素过多时自动降级为文本
+- 飞书 markdown 段落间距不可控（飞书渲染器行为）
+
+## 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|----------|
+| v2.0.7.0 | 2026-08-26 | 流式阶段标题降级 + 未闭合 Markdown 标记截断 |
+| v2.0.6.0 | 2026-08-26 | P1 全量优化：quotes 缓存、辅助函数提取、幽灵步骤日志、streaming_closed 去重、import 优化、answer throttle 300ms |
+| v2.0.5.0 | 2026-08-26 | P0-1 裁剪逻辑死代码修复、P0-3 compress_newlines 恢复 |
+| v2.0.4.0 | 2026-08-26 | 答案间距/字号/批次时序修复 |
+| v2.0.3.0 | 2026-08-26 | 推理轮次批次面板分组（reasoning_batch_size） |
+| v2.0.2.0 | 2026-08-26 | 嵌套折叠面板 + 答案词句分裂修复 |
+| v2.0.1.0 | 2026-08-26 | 答案 stream_element → partial_update_element |
 
 ## 许可证
 
 MIT License
+
 ## 作者
 
 boyang
