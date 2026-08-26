@@ -296,6 +296,10 @@ plugins:
 
 MIT License
 
+## 致谢
+
+本插件基于 [Aowen-Nowor](https://github.com/Aowen-Nowor) 的飞书流式卡片插件 fork 而来。感谢 aowen 的原始工作。
+
 ## 作者
 
-boyang
+boyang (Amaterasu)
