@@ -132,19 +132,9 @@ async def _fallback_write_answer(
     *,
     sequence: int,
 ) -> bool:
-    """Fallback: write answer content via batch_update + partial_update_element."""
+    """Fallback: write answer content via stream_element (triggers markdown re-parse)."""
     try:
-        fallback_actions = [{
-            "action": "partial_update_element",
-            "params": {
-                "element_id": ANSWER_ELEMENT_ID,
-                "partial_element": {
-                    "content": content,
-                    # 不带 tag/text_align/text_size — 飞书 partial_update 禁止更新 tag
-                },
-            },
-        }]
-        await client.cardkit_batch_update(card_id, fallback_actions, sequence=sequence)
+        await client.cardkit_stream_element(card_id, ANSWER_ELEMENT_ID, content, sequence=sequence)
         return True
     except FeishuAPIError as e:
         _logger.warning("HLS: fallback write answer failed: %s", e)
@@ -847,17 +837,9 @@ class UnifiedControllerMixin:
                             "HLS: seal drain answer text len=%d card=%s",
                             len(content), card_id[:12],
                         )
-                        # v2.9.1: Use partial_update_element during seal drain
-                        # to avoid typewriter reset on final content push.
-                        await self._client.cardkit_batch_update(
-                            session.card_id,
-                            [{
-                                "action": "partial_update_element",
-                                "params": {
-                                    "element_id": ANSWER_ELEMENT_ID,
-                                    "partial_element": {"content": content},
-                                },
-                            }],
+                        # v2.0.8.0: Use stream_element to trigger markdown re-parse
+                        await self._client.cardkit_stream_element(
+                            session.card_id, ANSWER_ELEMENT_ID, content,
                             sequence=session.sequence,
                         )
                         state.answer_dirty = False
@@ -915,14 +897,12 @@ class UnifiedControllerMixin:
                 _ANSWER_BYTES_LIMIT = 20000  # ~20KB, leave headroom for panel+footer
                 if len(optimized_content.encode("utf-8")) > _ANSWER_BYTES_LIMIT:
                     chunks = _split_long_text(optimized_content, limit=4000)
-                    # First chunk updates existing answer element
-                    seal_actions.append({
-                        "action": "partial_update_element",
-                        "params": {
-                            "element_id": ANSWER_ELEMENT_ID,
-                            "partial_element": {"content": chunks[0]},
-                        },
-                    })
+                    # v2.0.8.0: Use stream_element for first chunk (triggers markdown re-parse)
+                    session.sequence += 1
+                    await self._client.cardkit_stream_element(
+                        session.card_id, ANSWER_ELEMENT_ID, chunks[0],
+                        sequence=session.sequence,
+                    )
                     # Extra chunks inserted as new markdown elements
                     if len(chunks) > 1:
                         extra_elements = [
@@ -938,15 +918,12 @@ class UnifiedControllerMixin:
                             },
                         })
                 else:
-                    seal_actions.append({
-                        "action": "partial_update_element",
-                        "params": {
-                            "element_id": ANSWER_ELEMENT_ID,
-                            "partial_element": {
-                                "content": optimized_content,
-                            },
-                        },
-                    })
+                    # v2.0.8.0: Use stream_element to trigger markdown re-parse
+                    session.sequence += 1
+                    await self._client.cardkit_stream_element(
+                        session.card_id, ANSWER_ELEMENT_ID, optimized_content,
+                        sequence=session.sequence,
+                    )
 
             # ── Step 3: Add footer + delete loading elements ──
             seal_actions.extend(
@@ -1130,15 +1107,12 @@ class UnifiedControllerMixin:
                             # (see v1.3.1 fix comment in main seal path above).
                             if state.answer_text and "answer" in session._creation_stages:
                                 optimized_content = escape_markdown_asterisks(_downgrade_tables(optimize_markdown_style(state.answer_text))) or " "
-                                retry_actions.append({
-                                    "action": "partial_update_element",
-                                    "params": {
-                                        "element_id": ANSWER_ELEMENT_ID,
-                                        "partial_element": {
-                                            "content": optimized_content,
-                                        },
-                                    },
-                                })
+                                # v2.0.8.0: Use stream_element to trigger markdown re-parse
+                                session.sequence += 1
+                                await self._client.cardkit_stream_element(
+                                    session.card_id, ANSWER_ELEMENT_ID, optimized_content,
+                                    sequence=session.sequence,
+                                )
                         retry_actions.extend(
                             build_seal_actions(
                                 partial=partial,
@@ -1280,16 +1254,9 @@ class UnifiedControllerMixin:
                         "HLS: drain answer text len=%d msg=%s",
                         len(content), (session.message_id or "?")[:12],
                     )
-                    # v2.9.1: Use partial_update_element during drain
-                    await self._client.cardkit_batch_update(
-                        session.card_id,
-                        [{
-                            "action": "partial_update_element",
-                            "params": {
-                                "element_id": ANSWER_ELEMENT_ID,
-                                "partial_element": {"content": content},
-                            },
-                        }],
+                    # v2.0.8.0: Use stream_element to trigger markdown re-parse
+                    await self._client.cardkit_stream_element(
+                        session.card_id, ANSWER_ELEMENT_ID, content,
                         sequence=session.sequence,
                     )
                     state.answer_dirty = False
