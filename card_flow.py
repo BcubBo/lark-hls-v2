@@ -132,9 +132,19 @@ async def _fallback_write_answer(
     *,
     sequence: int,
 ) -> bool:
-    """Fallback: write answer content via stream_element (triggers markdown re-parse)."""
+    """Fallback: write answer via batch_update partial_update_element (no markdown re-parse, but works when streaming is closed)."""
     try:
-        await client.cardkit_stream_element(card_id, ANSWER_ELEMENT_ID, content, sequence=sequence)
+        await client.cardkit_batch_update(
+            card_id,
+            [{
+                "action": "partial_update_element",
+                "params": {
+                    "element_id": ANSWER_ELEMENT_ID,
+                    "partial_element": {"markdown": content},
+                },
+            }],
+            sequence=sequence,
+        )
         return True
     except FeishuAPIError as e:
         _logger.warning("HLS: fallback write answer failed: %s", e)
