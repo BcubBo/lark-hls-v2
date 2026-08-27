@@ -1258,44 +1258,54 @@ class UnifiedControllerMixin:
             # ── Drain answer text ──
             if state.answer_dirty and "answer" in session._creation_stages:
                 content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
-                try:
+                if session._streaming_closed:
+                    # streaming 已关闭，直接 fallback 避免无谓的 stream_element 失败
                     session.sequence += 1
-                    _logger.info(
-                        "HLS: drain answer text len=%d msg=%s",
-                        len(content), (session.message_id or "?")[:12],
-                    )
-                    # v2.0.8.0: Use stream_element to trigger markdown re-parse
-                    await self._client.cardkit_stream_element(
-                        session.card_id, ANSWER_ELEMENT_ID, content,
+                    ok = await _fallback_write_answer(
+                        self._client, session.card_id, content,
                         sequence=session.sequence,
                     )
-                    state.answer_dirty = False
-                except FeishuAPIError as e:
-                    # v1.1.1: 统一 fallback — 300309 和 300313 都改用 batch_update（不带 tag）
-                    # 之前 300309 直接 skip 答案丢失；300313 的 fallback 带 tag 报 300312
-                    if e.code == CARDKIT_STREAMING_CLOSED or is_element_not_found_error(e):
-                        if e.code == CARDKIT_STREAMING_CLOSED:
-                            session._streaming_closed = True
-                        # v1.2.0 Y3: streaming closed 日志去重；300313 仍每次打（非重复事件）
-                        if e.code == CARDKIT_STREAMING_CLOSED and session._streaming_closed_logged:
-                            pass
-                        else:
-                            _logger.info(
-                                "HLS: drain answer — %s, falling back to partial_update_element msg=%s",
-                                "streaming closed" if e.code == CARDKIT_STREAMING_CLOSED else "300313",
-                                (session.message_id or "?")[:12],
-                            )
-                            if e.code == CARDKIT_STREAMING_CLOSED:
-                                session._streaming_closed_logged = True
+                    if ok:
+                        state.answer_dirty = False
+                else:
+                    try:
                         session.sequence += 1
-                        ok = await _fallback_write_answer(
-                            self._client, session.card_id, content,
+                        _logger.info(
+                            "HLS: drain answer text len=%d msg=%s",
+                            len(content), (session.message_id or "?")[:12],
+                        )
+                        # v2.0.8.0: Use stream_element to trigger markdown re-parse
+                        await self._client.cardkit_stream_element(
+                            session.card_id, ANSWER_ELEMENT_ID, content,
                             sequence=session.sequence,
                         )
-                        if ok:
-                            state.answer_dirty = False
-                    else:
-                        _logger.warning("HLS: drain answer failed: %s", e)
+                        state.answer_dirty = False
+                    except FeishuAPIError as e:
+                        # v1.1.1: 统一 fallback — 300309 和 300313 都改用 batch_update（不带 tag）
+                        # 之前 300309 直接 skip 答案丢失；300313 的 fallback 带 tag 报 300312
+                        if e.code == CARDKIT_STREAMING_CLOSED or is_element_not_found_error(e):
+                            if e.code == CARDKIT_STREAMING_CLOSED:
+                                session._streaming_closed = True
+                            # v1.2.0 Y3: streaming closed 日志去重；300313 仍每次打（非重复事件）
+                            if e.code == CARDKIT_STREAMING_CLOSED and session._streaming_closed_logged:
+                                pass
+                            else:
+                                _logger.info(
+                                    "HLS: drain answer — %s, falling back to partial_update_element msg=%s",
+                                    "streaming closed" if e.code == CARDKIT_STREAMING_CLOSED else "300313",
+                                    (session.message_id or "?")[:12],
+                                )
+                                if e.code == CARDKIT_STREAMING_CLOSED:
+                                    session._streaming_closed_logged = True
+                            session.sequence += 1
+                            ok = await _fallback_write_answer(
+                                self._client, session.card_id, content,
+                                sequence=session.sequence,
+                            )
+                            if ok:
+                                state.answer_dirty = False
+                        else:
+                            _logger.warning("HLS: drain answer failed: %s", e)
 
             if _drain_round < _DRAIN_ROUNDS_MAX - 1:
                 await asyncio.sleep(_DRAIN_YIELD_SEC)
