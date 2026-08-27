@@ -140,7 +140,7 @@ async def _fallback_write_answer(
                 "action": "partial_update_element",
                 "params": {
                     "element_id": ANSWER_ELEMENT_ID,
-                    "partial_element": {"markdown": content},
+                    "partial_element": {"content": content},
                 },
             }],
             sequence=sequence,
