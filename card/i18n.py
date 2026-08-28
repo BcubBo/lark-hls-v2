@@ -46,7 +46,7 @@ _T: dict[str, tuple[str, str]] = {
     "status_error": ("Error", "出错"),
     "status_stopped": ("Stopped", "已停止"),
     "elapsed": ("Elapsed {}", "耗时 {}"),
-    "context": ("Context {}", "上下文 {}"),
+    "context": ("{}", "{}"),
     "processing": ("Processing...", "处理中..."),
     "thought": ("Thought", "思考"),
     "thinking_panel": ("Thinking", "思考中"),
@@ -56,7 +56,7 @@ _T: dict[str, tuple[str, str]] = {
     "error_panel": ("Error", "错误信息"),
     "interrupt_panel": ("Interrupted", "中断信息"),
     "compression_exhausted": ("⚠ Context Full", "⚠ 上下文已满"),
-    "cache": ("Cache {}", "缓存 {}"),
+    "cache": ("{}", "{}"),
     "bg_review_panel": ("Review", "审查"),
     "partial_continues": ("Continues in next message", "内容未完，继续在下一条消息"),
     # ── Context loading hint (first card only, removed on first token) ──
