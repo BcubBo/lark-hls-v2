@@ -909,10 +909,23 @@ class UnifiedControllerMixin:
                     chunks = _split_long_text(optimized_content, limit=4000)
                     # v2.0.8.0: Use stream_element for first chunk (triggers markdown re-parse)
                     session.sequence += 1
-                    await self._client.cardkit_stream_element(
-                        session.card_id, ANSWER_ELEMENT_ID, chunks[0],
-                        sequence=session.sequence,
-                    )
+                    try:
+                        await self._client.cardkit_stream_element(
+                            session.card_id, ANSWER_ELEMENT_ID, chunks[0],
+                            sequence=session.sequence,
+                        )
+                    except FeishuAPIError as e:
+                        if e.code == CARDKIT_STREAMING_CLOSED:
+                            session._streaming_closed = True
+                        _logger.info(
+                            "HLS: seal stream_element chunk0 — %s, falling back to partial_update_element card=%s",
+                            e, card_id[:12],
+                        )
+                        session.sequence += 1
+                        await _fallback_write_answer(
+                            self._client, session.card_id, chunks[0],
+                            sequence=session.sequence,
+                        )
                     # Extra chunks inserted as new markdown elements
                     if len(chunks) > 1:
                         extra_elements = [
@@ -930,10 +943,23 @@ class UnifiedControllerMixin:
                 else:
                     # v2.0.8.0: Use stream_element to trigger markdown re-parse
                     session.sequence += 1
-                    await self._client.cardkit_stream_element(
-                        session.card_id, ANSWER_ELEMENT_ID, optimized_content,
-                        sequence=session.sequence,
-                    )
+                    try:
+                        await self._client.cardkit_stream_element(
+                            session.card_id, ANSWER_ELEMENT_ID, optimized_content,
+                            sequence=session.sequence,
+                        )
+                    except FeishuAPIError as e:
+                        if e.code == CARDKIT_STREAMING_CLOSED:
+                            session._streaming_closed = True
+                        _logger.info(
+                            "HLS: seal stream_element — %s, falling back to partial_update_element card=%s",
+                            e, card_id[:12],
+                        )
+                        session.sequence += 1
+                        await _fallback_write_answer(
+                            self._client, session.card_id, optimized_content,
+                            sequence=session.sequence,
+                        )
 
             # ── Step 3: Add footer + delete loading elements ──
             seal_actions.extend(
@@ -1120,10 +1146,23 @@ class UnifiedControllerMixin:
                                 optimized_content = escape_markdown_asterisks(_downgrade_tables(optimize_markdown_style(state.answer_text))) or " "
                                 # v2.0.8.0: Use stream_element to trigger markdown re-parse
                                 session.sequence += 1
-                                await self._client.cardkit_stream_element(
-                                    session.card_id, ANSWER_ELEMENT_ID, optimized_content,
-                                    sequence=session.sequence,
-                                )
+                                try:
+                                    await self._client.cardkit_stream_element(
+                                        session.card_id, ANSWER_ELEMENT_ID, optimized_content,
+                                        sequence=session.sequence,
+                                    )
+                                except FeishuAPIError as stream_e:
+                                    if stream_e.code == CARDKIT_STREAMING_CLOSED:
+                                        session._streaming_closed = True
+                                    _logger.info(
+                                        "HLS: seal retry stream_element — %s, falling back to partial_update_element card=%s",
+                                        stream_e, card_id[:12],
+                                    )
+                                    session.sequence += 1
+                                    await _fallback_write_answer(
+                                        self._client, session.card_id, optimized_content,
+                                        sequence=session.sequence,
+                                    )
                         retry_actions.extend(
                             build_seal_actions(
                                 partial=partial,
