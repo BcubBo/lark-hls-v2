@@ -947,6 +947,7 @@ class UnifiedControllerMixin:
                     footer_show_label=footer_show_label,
                     existing_elements=session.existing_elements,
                     card_trace_id=session.card_trace_id,
+                    footer_before_panel=True,
                 )
             )
 
@@ -1134,6 +1135,7 @@ class UnifiedControllerMixin:
                                 footer_show_label=footer_show_label,
                                 existing_elements=session.existing_elements,
                                 card_trace_id=session.card_trace_id,
+                                footer_before_panel=True,
                             )
                         )
                         # batch_update BEFORE close_streaming (same order as try block)

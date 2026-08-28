@@ -837,7 +837,7 @@ def build_colored_divider(*, color: str = "grey") -> dict:
 # 插入 error panel + footer → 删除 loading_hint + loading_icon。
 # existing_elements 过滤已删除的元素，避免重复删除报错。
 # ================================================================
-def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "") -> list[dict]:
+def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "", footer_before_panel: bool = False) -> list[dict]:
     """构建保留式封卡 batch_update actions. Inserts error panel + footer via insert_before
     loading_icon, then deletes loading_hint + loading_icon. existing_elements filters deletes."""
     actions: list[dict] = []
@@ -890,7 +890,7 @@ def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None
             "action": "add_elements",
             "params": {
                 "type": "insert_before",
-                "target_element_id": _LOADING_ELEMENT_ID,
+                "target_element_id": UNIFIED_PANEL_ELEMENT_ID if footer_before_panel else _LOADING_ELEMENT_ID,
                 "elements": partial_elements,
             },
         })
@@ -907,7 +907,7 @@ def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None
                 "action": "add_elements",
                 "params": {
                     "type": "insert_before",
-                    "target_element_id": _LOADING_ELEMENT_ID,
+                    "target_element_id": UNIFIED_PANEL_ELEMENT_ID if footer_before_panel else _LOADING_ELEMENT_ID,
                     "elements": footer_elements,
                 },
             })
