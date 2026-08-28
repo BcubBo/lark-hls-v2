@@ -31,7 +31,7 @@
 # 8. phase 2 和 phase 3 的区别：phase 2 创建新元素，phase 3 更新已有元素。
 #
 # ▍特殊机制
-# "三阶段 flush"：Phase 2 创建 panel+answer 元素 → Phase 3 更新 panel → stream answer 文本。
+# "三阶段 flush"：Phase 2 创建 answer+panel 元素 → Phase 3 更新 panel → stream answer 文本。
 # 每个 phase 最多 2 个 API 调用（batch_update + stream_element）。
 #
 # ▍更新记录
@@ -420,13 +420,13 @@ class UnifiedControllerMixin:
                 except asyncio.CancelledError:
                     pass
 
-            # ── Path A: Has reasoning or tools → add unified panel ──
+            # ── Path A & B: Always add answer streaming element first ──
+            new_elements.append(_streaming_element(element_id=ANSWER_ELEMENT_ID))
+
+            # ── Path A: Has reasoning or tools → add unified panel after answer ──
             if state.panel_visible:
                 panel = self._build_panel(session, state)
                 new_elements.append(panel)
-
-            # ── Path A & B: Always add answer streaming element ──
-            new_elements.append(_streaming_element(element_id=ANSWER_ELEMENT_ID))
 
             # Add new elements before loading hint
             actions.append({
@@ -560,7 +560,7 @@ class UnifiedControllerMixin:
                 actions.append({
                     "action": "add_elements",
                     "params": {
-                        "type": "insert_before",
+                        "type": "insert_after",
                         "target_element_id": ANSWER_ELEMENT_ID,
                         "elements": [panel],
                     },
@@ -952,13 +952,13 @@ class UnifiedControllerMixin:
 
             if panel is not None:
                 simulated_elements: list[dict] = []
-                # Panel
-                simulated_elements.append(panel)
-                # Answer element (1 markdown with content)
+                # Answer element (1 markdown with content) — displayed before panel
                 if state is not None and state.answer_text:
                     simulated_elements.append({"tag": "markdown", "content": state.answer_text})
                 else:
                     simulated_elements.append({"tag": "markdown", "content": " "})
+                # Panel (reasoning/tools)
+                simulated_elements.append(panel)
                 # Elements from add_elements actions (footer, error, partial, bg review)
                 for action in seal_actions:
                     if action.get("action") == "add_elements":

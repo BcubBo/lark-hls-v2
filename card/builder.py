@@ -10,7 +10,7 @@
 # ② _enforce_card_element_limit — 超限时裁剪 panel 子元素（从头部裁，加"已折叠"提示）
 # ③ build_streaming_card_v2 — ★核心★ 流式卡片构建器，卡片生命周期的起点
 # ▍修改铁律
-# 1. build_streaming_card_v2 的元素顺序是契约 — panel → answer → loading_hint → loading_icon。
+# 1. build_streaming_card_v2 的元素顺序是契约 — answer → panel → loading_hint → loading_icon。
 #    改顺序会导致 card_flow.py 的 _do_unified_flush 里 element_id 定位失败。
 # 2. _enforce_card_element_limit 从头部裁剪（保留最新的推理/工具步骤），
 #    【不】改成从尾部裁 — 用户关注的是最新状态。
@@ -206,13 +206,13 @@ def build_streaming_card_v2(
         except Exception:
             pass  # 优雅降级 — 没有 header 卡片也能用
 
+    # ── 流式回答元素（answer 在 panel 前面）──
+    if show_streaming_element and include_answer_element:
+        elements.append(_streaming_element(element_id=ANSWER_ELEMENT_ID))
+
     # ── Unified panel 占位（linear 模式 — reasoning+tools 共用一个 panel）──
     if include_unified_panel:
         elements.append(_build_unified_panel_placeholder(expanded=streaming_panel_expanded))
-
-    # ── 流式回答元素 ──
-    if show_streaming_element and include_answer_element:
-        elements.append(_streaming_element(element_id=ANSWER_ELEMENT_ID))
 
     # ── Loading hint（"正在加载上下文..."，首字即显时删除）──
     if include_loading_hint:
