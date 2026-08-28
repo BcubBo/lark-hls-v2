@@ -1202,115 +1202,137 @@ class UnifiedControllerMixin:
 
         # without being flushed.  We must drain it ALL here, before
         # the "footer appears before content finishes" bug.
+        # v2.0.9.1 fix: drain loop 用 try/except 包裹，CancelledError 时
+        # 也要执行 mark_completed + finalize_card，避免 gateway 关闭时最后一批内容截断。
         state = session.unified_state
-        for _drain_round in range(_DRAIN_ROUNDS_MAX):
-            if not (
-                state is not None
-                and session.card_id
-                and "answer" in session._creation_stages
-                and (state.answer_dirty or state.panel_dirty or state.tool_steps_dirty)
-            ):
-                break  # No dirty data — drain complete
+        _drain_cancelled = False
+        try:
+            for _drain_round in range(_DRAIN_ROUNDS_MAX):
+                if not (
+                    state is not None
+                    and session.card_id
+                    and "answer" in session._creation_stages
+                    and (state.answer_dirty or state.panel_dirty or state.tool_steps_dirty)
+                ):
+                    break  # No dirty data — drain complete
 
-            _logger.info(
-                "linear complete: drain round %d/%d "
-                "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s msg=%s",
-                _drain_round + 1, _DRAIN_ROUNDS_MAX,
-                state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
-                (session.message_id or "?")[:12],
-            )
-            assert self._client is not None
+                _logger.info(
+                    "linear complete: drain round %d/%d "
+                    "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s msg=%s",
+                    _drain_round + 1, _DRAIN_ROUNDS_MAX,
+                    state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
+                    (session.message_id or "?")[:12],
+                )
+                assert self._client is not None
 
-            # ── Drain panel content ──
-            if state.panel_dirty and "panel" in session._creation_stages:
-                panel = self._build_panel(session, state)
-                drain_actions: list[dict[str, Any]] = [{
-                    "action": "partial_update_element",
-                    "params": {
-                        "element_id": UNIFIED_PANEL_ELEMENT_ID,
-                        "partial_element": {
-                            "header": panel["header"],
-                            "elements": panel["elements"],
+                # ── Drain panel content ──
+                if state.panel_dirty and "panel" in session._creation_stages:
+                    panel = self._build_panel(session, state)
+                    drain_actions: list[dict[str, Any]] = [{
+                        "action": "partial_update_element",
+                        "params": {
+                            "element_id": UNIFIED_PANEL_ELEMENT_ID,
+                            "partial_element": {
+                                "header": panel["header"],
+                                "elements": panel["elements"],
+                            },
                         },
-                    },
-                }]
-                try:
-                    session.sequence += 1
-                    await self._client.cardkit_batch_update(
-                        session.card_id, drain_actions, sequence=session.sequence,
-                    )
-                    state.panel_dirty = False
-                    state.tool_steps_dirty = False
-                except FeishuAPIError as e:
-                    if e.code == CARDKIT_STREAMING_CLOSED:
-                        # v1.2.0 Y3: drain 阶段也用 _streaming_closed_logged 去重
-                        if session._streaming_closed_logged:
-                            _logger.debug("drain: streaming already closed (already logged)")
-                        else:
-                            _logger.info("drain: streaming already closed, skipping")
-                            session._streaming_closed_logged = True
-                        session._streaming_closed = True
-                    elif is_schema_error(e):
-                        _logger.error("drain SCHEMA ERROR: %s — detail: %s", e, e.extract_schema_detail())
-                        state.panel_dirty = False
-                        state.tool_steps_dirty = False
-                    else:
-                        _logger.warning("drain panel failed: %s", e)
-
-            # ── Drain answer text ──
-            if state.answer_dirty and "answer" in session._creation_stages:
-                content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
-                if session._streaming_closed:
-                    # streaming 已关闭，直接 fallback 避免无谓的 stream_element 失败
-                    session.sequence += 1
-                    ok = await _fallback_write_answer(
-                        self._client, session.card_id, content,
-                        sequence=session.sequence,
-                    )
-                    if ok:
-                        state.answer_dirty = False
-                else:
+                    }]
                     try:
                         session.sequence += 1
-                        _logger.info(
-                            "HLS: drain answer text len=%d msg=%s",
-                            len(content), (session.message_id or "?")[:12],
+                        await self._client.cardkit_batch_update(
+                            session.card_id, drain_actions, sequence=session.sequence,
                         )
-                        # v2.0.8.0: Use stream_element to trigger markdown re-parse
-                        await self._client.cardkit_stream_element(
-                            session.card_id, ANSWER_ELEMENT_ID, content,
+                        state.panel_dirty = False
+                        state.tool_steps_dirty = False
+                    except FeishuAPIError as e:
+                        if e.code == CARDKIT_STREAMING_CLOSED:
+                            # v1.2.0 Y3: drain 阶段也用 _streaming_closed_logged 去重
+                            if session._streaming_closed_logged:
+                                _logger.debug("drain: streaming already closed (already logged)")
+                            else:
+                                _logger.info("drain: streaming already closed, skipping")
+                                session._streaming_closed_logged = True
+                            session._streaming_closed = True
+                        elif is_schema_error(e):
+                            _logger.error("drain SCHEMA ERROR: %s — detail: %s", e, e.extract_schema_detail())
+                            state.panel_dirty = False
+                            state.tool_steps_dirty = False
+                        else:
+                            _logger.warning("drain panel failed: %s", e)
+
+                # ── Drain answer text ──
+                if state.answer_dirty and "answer" in session._creation_stages:
+                    content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
+                    if session._streaming_closed:
+                        # streaming 已关闭，直接 fallback 避免无谓的 stream_element 失败
+                        session.sequence += 1
+                        ok = await _fallback_write_answer(
+                            self._client, session.card_id, content,
                             sequence=session.sequence,
                         )
-                        state.answer_dirty = False
-                    except FeishuAPIError as e:
-                        # v1.1.1: 统一 fallback — 300309 和 300313 都改用 batch_update（不带 tag）
-                        # 之前 300309 直接 skip 答案丢失；300313 的 fallback 带 tag 报 300312
-                        if e.code == CARDKIT_STREAMING_CLOSED or is_element_not_found_error(e):
-                            if e.code == CARDKIT_STREAMING_CLOSED:
-                                session._streaming_closed = True
-                            # v1.2.0 Y3: streaming closed 日志去重；300313 仍每次打（非重复事件）
-                            if e.code == CARDKIT_STREAMING_CLOSED and session._streaming_closed_logged:
-                                pass
-                            else:
-                                _logger.info(
-                                    "HLS: drain answer — %s, falling back to partial_update_element msg=%s",
-                                    "streaming closed" if e.code == CARDKIT_STREAMING_CLOSED else "300313",
-                                    (session.message_id or "?")[:12],
-                                )
-                                if e.code == CARDKIT_STREAMING_CLOSED:
-                                    session._streaming_closed_logged = True
+                        if ok:
+                            state.answer_dirty = False
+                    else:
+                        try:
                             session.sequence += 1
-                            ok = await _fallback_write_answer(
-                                self._client, session.card_id, content,
+                            _logger.info(
+                                "HLS: drain answer text len=%d msg=%s",
+                                len(content), (session.message_id or "?")[:12],
+                            )
+                            # v2.0.8.0: Use stream_element to trigger markdown re-parse
+                            await self._client.cardkit_stream_element(
+                                session.card_id, ANSWER_ELEMENT_ID, content,
                                 sequence=session.sequence,
                             )
-                            if ok:
-                                state.answer_dirty = False
-                        else:
-                            _logger.warning("HLS: drain answer failed: %s", e)
+                            state.answer_dirty = False
+                        except FeishuAPIError as e:
+                            # v1.1.1: 统一 fallback — 300309 和 300313 都改用 batch_update（不带 tag）
+                            # 之前 300309 直接 skip 答案丢失；300313 的 fallback 带 tag 报 300312
+                            if e.code == CARDKIT_STREAMING_CLOSED or is_element_not_found_error(e):
+                                if e.code == CARDKIT_STREAMING_CLOSED:
+                                    session._streaming_closed = True
+                                # v1.2.0 Y3: streaming closed 日志去重；300313 仍每次打（非重复事件）
+                                if e.code == CARDKIT_STREAMING_CLOSED and session._streaming_closed_logged:
+                                    pass
+                                else:
+                                    _logger.info(
+                                        "HLS: drain answer — %s, falling back to partial_update_element msg=%s",
+                                        "streaming closed" if e.code == CARDKIT_STREAMING_CLOSED else "300313",
+                                        (session.message_id or "?")[:12],
+                                    )
+                                    if e.code == CARDKIT_STREAMING_CLOSED:
+                                        session._streaming_closed_logged = True
+                                session.sequence += 1
+                                ok = await _fallback_write_answer(
+                                    self._client, session.card_id, content,
+                                    sequence=session.sequence,
+                                )
+                                if ok:
+                                    state.answer_dirty = False
+                            else:
+                                _logger.warning("HLS: drain answer failed: %s", e)
 
-            if _drain_round < _DRAIN_ROUNDS_MAX - 1:
-                await asyncio.sleep(_DRAIN_YIELD_SEC)
+                if _drain_round < _DRAIN_ROUNDS_MAX - 1:
+                    await asyncio.sleep(_DRAIN_YIELD_SEC)
+        except asyncio.CancelledError:
+            # v2.0.9.1 fix: gateway 关闭时 task 被 cancel，drain 被中断。
+            # 必须继续执行 mark_completed + finalize_card，否则最后一批内容截断。
+            _logger.warning(
+                "linear complete: drain cancelled (gateway shutdown?) "
+                "answer_dirty=%s panel_dirty=%s msg=%s — "
+                "proceeding to finalize_card",
+                state.answer_dirty if state else "?",
+                state.panel_dirty if state else "?",
+                (session.message_id or "?")[:12],
+            )
+            _drain_cancelled = True
+        except Exception:
+            _logger.warning(
+                "linear complete: drain unexpected error msg=%s",
+                (session.message_id or "?")[:12],
+                exc_info=True,
+            )
 
         # ── Final drain check: log warning if dirty data remains ──
         if state is not None and (state.answer_dirty or state.panel_dirty or state.tool_steps_dirty):
