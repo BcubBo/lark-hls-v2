@@ -518,20 +518,30 @@ class StreamCardController(UnifiedControllerMixin):
                                 )
                             except (asyncio.TimeoutError, Exception):
                                 pass
-                            if old_session.state == COMPLETING:
+                            if old_session.state in (COMPLETING, *TERMINAL_PHASES):
                                 return
-                            old_session.state = ABORTED
+                            if not old_session.set_state(
+                                ABORTED, source="_wait_and_abort",
+                                reason=TerminalReason.ABORT, terminal=True,
+                            ):
+                                return
                             old_session.flush.mark_completed()
                             self._dispatch_completion(old_session)
                         self._fire_and_forget(_wait_and_abort(), loop)
                     else:
-                        old_session.state = ABORTED
+                        if old_session.set_state(
+                            ABORTED, source="on_interrupted",
+                            reason=TerminalReason.ABORT, terminal=True,
+                        ):
+                            old_session.flush.mark_completed()
+                            self._dispatch_completion(old_session)
+                else:
+                    if old_session.set_state(
+                        ABORTED, source="on_interrupted",
+                        reason=TerminalReason.ABORT, terminal=True,
+                    ):
                         old_session.flush.mark_completed()
                         self._dispatch_completion(old_session)
-                else:
-                    old_session.state = ABORTED
-                    old_session.flush.mark_completed()
-                    self._dispatch_completion(old_session)
 
         if self._sess_get(new_message_id) is None:
             loop = self._get_loop()
