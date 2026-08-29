@@ -131,6 +131,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
             "user_name": getattr(source, "user_name", "") or "",
             "chat_type": getattr(source, "chat_type", "dm") or "dm",
             "platform": _platform.value if _platform else "",
+            "session_id": "",  # filled by _wrap_run_agent (session_id not available here yet)
         }
         _msg_ctx.set(msg_context)
 
@@ -324,6 +325,15 @@ def _wrap_run_agent(orig: Callable) -> Callable:
             else:
                 ctx["event_message_id"] = event_message_id
             # Copy to thread-local for thread-pool workers
+            _thread_local_ctx.data = dict(ctx)
+
+        # Inject session_id into _msg_ctx so downstream plugins (mem0x etc.)
+        # can read it via _get_context().  _wrap_handle_message_with_agent sets
+        # _msg_ctx before session_id is known; this is the first point where
+        # the gateway's session_id is available.
+        ctx = _msg_ctx.get()
+        if ctx is not None and session_id and not ctx.get("session_id"):
+            ctx["session_id"] = session_id
             _thread_local_ctx.data = dict(ctx)
 
         # v1.3.4 fix (P1): 确保 orig() 抛异常时 _saved_parent_ctx 被恢复。
