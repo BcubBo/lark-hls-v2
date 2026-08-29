@@ -104,6 +104,7 @@ class CardSession:
         "_was_aborted",
         "_answer_streamed",
         "_state_lock",
+        "_completion_dispatched",
     )
 
     def __init__(
@@ -132,6 +133,7 @@ class CardSession:
         self.deferred_background_reviews: list[tuple[str, Any]] = []
         self.deferred_background_review_lock = Lock()
         self._state_lock = Lock()
+        self._completion_dispatched: bool = False
 
         # -- State machine enhancements --
         self.create_epoch: int = 0          # Incremented on terminal phase entry

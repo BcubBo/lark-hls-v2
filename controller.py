@@ -691,6 +691,9 @@ class StreamCardController(UnifiedControllerMixin):
 
     def _dispatch_completion(self, session: CardSession) -> None:
         """分发封卡: 通过 fire_and_forget 异步执行 _complete_with_fallback。"""
+        if session._completion_dispatched:
+            return
+        session._completion_dispatched = True
         self._fire_and_forget(self._complete_with_fallback(session), session._loop)
 
     async def _complete_with_fallback(self, session: CardSession) -> None:
