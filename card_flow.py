@@ -1436,15 +1436,25 @@ class UnifiedControllerMixin:
         )
 
         # ── Step 5: Preservative seal (the only completion path) ──
-        seal_ok = await self._finalize_card(
-            session,
-            footer_data=footer_data,
-            is_error=is_error,
-            is_aborted=is_aborted,
-            error_message=error_message,
-            footer_fields=self._cfg.footer_fields,
-            footer_show_label=self._cfg.footer_show_label,
-        )
+        try:
+            seal_ok = await asyncio.wait_for(
+                self._finalize_card(
+                    session,
+                    footer_data=footer_data,
+                    is_error=is_error,
+                    is_aborted=is_aborted,
+                    error_message=error_message,
+                    footer_fields=self._cfg.footer_fields,
+                    footer_show_label=self._cfg.footer_show_label,
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            _logger.warning(
+                "complete: _finalize_card timed out (30s): msg=%s",
+                (session.message_id or "?")[:12],
+            )
+            seal_ok = False
 
         if seal_ok:
             # v1.3.4 fix (P1): 如果会话已被 on_aborted 标记为 ABORTED，
