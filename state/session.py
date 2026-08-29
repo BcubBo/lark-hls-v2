@@ -103,6 +103,7 @@ class CardSession:
         "_streaming_closed_logged",
         "_was_aborted",
         "_answer_streamed",
+        "_state_lock",
     )
 
     def __init__(
@@ -130,6 +131,7 @@ class CardSession:
         self.deferred_background_review_closed = False
         self.deferred_background_reviews: list[tuple[str, Any]] = []
         self.deferred_background_review_lock = Lock()
+        self._state_lock = Lock()
 
         # -- State machine enhancements --
         self.create_epoch: int = 0          # Incremented on terminal phase entry
@@ -200,6 +202,26 @@ class CardSession:
 
         return True
 
+    def set_state(
+        self,
+        to: str,
+        *,
+        source: str = "",
+        reason: str = "",
+        terminal: bool = False,
+    ) -> bool:
+        """Thread-safe state assignment with terminal-state guard.
+        Returns False if the session is already in a terminal phase.
+        When *terminal* is True, enter_terminal() is called on success.
+        """
+        with self._state_lock:
+            if self.state in TERMINAL_PHASES:
+                return False
+            self.state = to
+            if terminal:
+                self.enter_terminal(reason=reason, source=source)
+            return True
+
     def should_proceed(self, source: str = "") -> bool:
         """Combines state + guard checks.
         改了这里的检查逻辑会导致已终态的消息继续处理。
@@ -235,12 +257,11 @@ class CardSession:
         """Callback from UnavailableGuard -- message was deleted/recalled.
         改了这里的终态设置会导致被撤回的消息继续更新卡片。
         """
-        if self.state in TERMINAL_PHASES:
-            return
-        self.state = CardPhase.TERMINATED
-        self.enter_terminal(
-            reason=TerminalReason.UNAVAILABLE,
+        self.set_state(
+            CardPhase.TERMINATED,
             source="unavailable_guard",
+            reason=TerminalReason.UNAVAILABLE,
+            terminal=True,
         )
         # Signal readiness so awaiters don't deadlock
         self._card_ready.set()

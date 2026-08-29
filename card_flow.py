@@ -258,7 +258,7 @@ class UnifiedControllerMixin:
             return
         # Snapshot epoch before async creation
         epoch = session.create_epoch
-        session.state = CREATING
+        session.set_state(CREATING, source="_do_create_linear_card")
         session._create_epoch_snap = epoch
         session.linear = True
         # v1.4.0 fix (问题3 根因1 — delegate_task 后卡片降级纯文本):
@@ -306,7 +306,7 @@ class UnifiedControllerMixin:
 
             # ── Stale-create guard ──
             if session.state == CREATING and not session.is_stale_create(epoch):
-                session.state = STREAMING
+                session.set_state(STREAMING, source="_do_create_linear_card")
 
             if session.linear and session.unified_state and (
                 session.unified_state.has_dirty or session._pending_flush
@@ -343,10 +343,11 @@ class UnifiedControllerMixin:
                     session.guard.terminate("_do_create_linear_card", err=e)
                 except Exception:
                     _logger.debug("guard.terminate failed in create path", exc_info=True)
-            session.state = CREATION_FAILED
-            session.enter_terminal(
-                reason=TerminalReason.CREATION_FAILED,
+            session.set_state(
+                CREATION_FAILED,
                 source="_do_create_linear_card",
+                reason=TerminalReason.CREATION_FAILED,
+                terminal=True,
             )
             # Signal readiness even on failure so awaiters don't deadlock
             session._card_ready.set()
@@ -1407,10 +1408,11 @@ class UnifiedControllerMixin:
             _logger.warning("complete: card creation timed out: msg=%s", (session.message_id or "?")[:12])
 
         if not session.card_id:
-            session.state = CREATION_FAILED
-            session.enter_terminal(
-                reason=TerminalReason.CREATION_FAILED,
+            session.set_state(
+                CREATION_FAILED,
                 source="_complete_card_flow",
+                reason=TerminalReason.CREATION_FAILED,
+                terminal=True,
             )
             return False
 
@@ -1447,9 +1449,19 @@ class UnifiedControllerMixin:
         if seal_ok:
             # v1.3.4 fix (P1): 如果会话已被 on_aborted 标记为 ABORTED，
             if session._was_aborted:
-                session.state = ABORTED
+                session.set_state(
+                    ABORTED,
+                    source="_complete_card_flow",
+                    reason=TerminalReason.ABORT,
+                    terminal=True,
+                )
             else:
-                session.state = COMPLETED
+                session.set_state(
+                    COMPLETED,
+                    source="_complete_card_flow",
+                    reason=TerminalReason.NORMAL,
+                    terminal=True,
+                )
             # v1.1.1: 释放重数据（unified_state/text/tool_use），减少内存占用
             # session 留最小元数据等 _prune_stale_sessions 清理
             try:
@@ -1463,10 +1475,11 @@ class UnifiedControllerMixin:
             except Exception:
                 _logger.debug('metrics: record_card_completed failed', exc_info=True)
         else:
-            session.state = CREATION_FAILED
-            session.enter_terminal(
-                reason=TerminalReason.CREATION_FAILED,
+            session.set_state(
+                CREATION_FAILED,
                 source="_complete_card_flow_seal_failed",
+                reason=TerminalReason.CREATION_FAILED,
+                terminal=True,
             )
             # v1.1.1: 失败也释放重数据
             try:

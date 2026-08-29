@@ -278,7 +278,7 @@ class StreamCardController(UnifiedControllerMixin):
 
         try:
             if not stale_session.is_terminal_phase and stale_session.state != COMPLETING:
-                stale_session.state = COMPLETING
+                stale_session.set_state(COMPLETING, source="continuation")
                 self._fire_and_forget(
                     self._complete_with_fallback(stale_session),
                     stale_session._loop,
@@ -647,7 +647,7 @@ class StreamCardController(UnifiedControllerMixin):
         if cost_status and cost_status != "unknown":
             session.footer["cost_status"] = cost_status
 
-        session.state = COMPLETING
+        session.set_state(COMPLETING, source="on_completed")
         self._dispatch_completion(session)
         return True
 
