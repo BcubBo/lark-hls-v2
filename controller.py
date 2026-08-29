@@ -485,7 +485,11 @@ class StreamCardController(UnifiedControllerMixin):
             return
 
         session._was_aborted = True
-        session.state = ABORTED
+        if not session.set_state(
+            ABORTED, source="on_aborted",
+            reason=TerminalReason.ABORT, terminal=True,
+        ):
+            return
         session.flush.mark_completed()
         self._dispatch_completion(session)
 
