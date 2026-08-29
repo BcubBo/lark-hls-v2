@@ -326,9 +326,23 @@ class StreamCardController(UnifiedControllerMixin):
     def _prune_stale_sessions(self) -> None:
         now = time.time()
         for mid, s in self._sess_items_snapshot():
-            if mid is None or now - s.created_at <= self._session_ttl:
+            if mid is None:
+                continue
+            age = now - s.created_at
+            if age <= self._session_ttl:
                 continue
             if s.is_terminal_phase:
+                self._cleanup(mid)
+            elif age > 2 * self._session_ttl:
+                _logger.warning(
+                    "prune: force-terminating stale non-terminal session "
+                    "state=%s age=%.0fs msg=%s",
+                    s.state, age, (mid or "?")[:12],
+                )
+                s.set_state(
+                    TERMINATED, source="_prune_stale_sessions",
+                    reason=TerminalReason.UNAVAILABLE, terminal=True,
+                )
                 self._cleanup(mid)
 
     # ── Public hook entry points ────────────────────────────────────
