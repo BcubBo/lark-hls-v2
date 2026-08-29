@@ -1063,9 +1063,19 @@ class UnifiedControllerMixin:
 
             if seal_actions:
                 session.sequence += 1
-                await self._client.cardkit_batch_update(
-                    card_id, seal_actions, sequence=session.sequence,
-                )
+                try:
+                    await self._client.cardkit_batch_update(
+                        card_id, seal_actions, sequence=session.sequence,
+                    )
+                except FeishuAPIError as e:
+                    if e.code == CARDKIT_STREAMING_CLOSED:
+                        session._streaming_closed = True
+                        _logger.info(
+                            "seal batch_update: streaming already closed, card=%s",
+                            card_id[:12],
+                        )
+                    else:
+                        raise
 
             # When closing streaming, we MUST also update the card's summary
             # bug the user reported.
