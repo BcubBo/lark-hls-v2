@@ -87,6 +87,7 @@ ABORTED = CardPhase.ABORTED
 
 # v1.3.2: module-level constant
 _INTERRUPT_MAP_MAX = 200
+_CONTINUATION_MAP_MAX = 100
 
 
 class StreamCardController(UnifiedControllerMixin):
@@ -221,6 +222,10 @@ class StreamCardController(UnifiedControllerMixin):
     def _register_continuation(self, old_message_id: str, new_message_id: str) -> None:
         with self._continuation_map_lock:
             self._continuation_map[old_message_id] = new_message_id
+            if len(self._continuation_map) > _CONTINUATION_MAP_MAX:
+                excess = len(self._continuation_map) - _CONTINUATION_MAP_MAX
+                for old_key in list(self._continuation_map.keys())[:excess]:
+                    self._continuation_map.pop(old_key, None)
 
     def _pop_continuation_id(self, message_id: str) -> str | None:
         with self._continuation_map_lock:
