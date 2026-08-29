@@ -1202,10 +1202,11 @@ class UnifiedControllerMixin:
                     except FeishuAPIError as retry_e:
                         if retry_e.code == CARDKIT_SEQUENCE_CONFLICT:
                             continue
-                        # v1.3.4 fix (P1): retry 路径 300309 应与主路径一致 return False
+                        # v2.0.9.2 fix: 300309 时 seal actions 已发送成功，
+                        # 卡片内容完整，return True 避免 fallback 重复发送
                         if retry_e.code == CARDKIT_STREAMING_CLOSED:
                             session._streaming_closed = True
-                            return False
+                            return True
                         raise
                 # All retries exhausted
                 _logger.warning(
@@ -1213,8 +1214,11 @@ class UnifiedControllerMixin:
                     card_id[:12],
                 )
                 return False
+            # v2.0.9.2 fix: 300309 时 seal actions 已发送成功，
+            # 卡片内容完整，return True 避免 fallback 重复发送
             if e.code == CARDKIT_STREAMING_CLOSED:
                 session._streaming_closed = True
+                return True
             return False
         except Exception:
             _logger.exception('finalize_card unexpected error')
