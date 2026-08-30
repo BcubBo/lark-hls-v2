@@ -33,12 +33,31 @@
 from __future__ import annotations
 import logging
 import os
+import time
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
 from ..controller import get_controller
-from ..feishu.user_cache import FeishuUserCache
+
+# feishu_identity 模块（替代旧的 FeishuUserCache）
+import sys as _sys
+from pathlib import Path as _Path
+_hermes_home = os.environ.get("HERMES_HOME", str(_Path.home() / ".hermes" / "profiles" / "bo"))
+_scripts_dir = os.path.join(_hermes_home, "scripts")
+if _scripts_dir not in _sys.path:
+    _sys.path.insert(0, _scripts_dir)
+try:
+    from feishu_identity import FeishuIdentity as _FeishuIdentity
+except ImportError:
+    # 插件缺失时提供空实现，避免全部 hook 失效
+    class _FeishuIdentity:  # type: ignore[no-redef]
+        @staticmethod
+        def get_user_id(*a, **kw):
+            return None
+        @staticmethod
+        def get_user_name(*a, **kw):
+            return None
 
 _logger = logging.getLogger("lark_hls_v2")
 
@@ -253,10 +272,12 @@ async def on_cron_deliver(
     content: str,
     category: str = "",
     loop: Any = None,
+    job: dict | None = None,
 ) -> bool:
     """[注入点 10] cron 推送 — 包装为飞书卡片发送.
     
     category: "cron" (默认) | "gateway" | "clarify" 等，决定使用哪种卡片模板
+    job: 完整 job dict（可选），含 name/id/schedule/failure_streak/last_error
     """
     if loop is None:
         return False
@@ -269,23 +290,53 @@ async def on_cron_deliver(
         if not category and "unknown command" in content.lower():
             category = "gateway"
         
-        return bool(await ctrl.on_cron_deliver_async(chat_id=chat_id, content=content, category=category, loop=loop))
+        # 从 job dict 提取元数据
+        job_name = ""
+        job_id = ""
+        status = "success"
+        schedule = None
+        failure_streak = 0
+        last_error = ""
+        if job:
+            job_name = job.get("name", "") or job.get("id", "")[:12]
+            job_id = job.get("id", "")
+            schedule = job.get("schedule")
+            failure_streak = int(job.get("failure_streak", 0))
+            last_error = job.get("last_error", "")
+            # 用 job.failure_streak 作为 status fallback
+            if failure_streak > 0:
+                status = "error"
+        
+        # 从 content 检测状态（最高优先级）
+        from ..card.special import _detect_cron_status
+        status = _detect_cron_status(content)
+        
+        return bool(await ctrl.on_cron_deliver_async(
+            chat_id=chat_id,
+            content=content,
+            category=category,
+            loop=loop,
+            job_name=job_name,
+            job_id=job_id,
+            status=status,
+            schedule=schedule,
+            failure_streak=failure_streak,
+            last_error=last_error,
+        ))
     except Exception as exc:
         _logger.warning("on_cron_deliver error: %s", exc, exc_info=True)
         return False
 
 # ---------------------------------------------------------------------------
-# System role injection: inject system_role into source.user_name
-# ---------------------------------------------------------------------------
+# ── 权限注入：读 feishu_identity.db ────────────────────────────────────────
 
-_user_cache: FeishuUserCache | None = None
+_identity_cache: "_FeishuIdentity | None" = None
 
-def _get_user_cache() -> FeishuUserCache:
-    global _user_cache
-    if _user_cache is None:
-        from hermes_constants import get_hermes_home
-        _user_cache = FeishuUserCache(str(get_hermes_home() / "feishu.group.sqlite3"))
-    return _user_cache
+def _get_identity() -> "_FeishuIdentity":
+    global _identity_cache
+    if _identity_cache is None:
+        _identity_cache = _FeishuIdentity()
+    return _identity_cache
 
 def _inject_system_role(source: Any) -> None:
     """Inject system_role into source.user_name.
@@ -304,38 +355,34 @@ def _inject_system_role(source: Any) -> None:
         if ":" in user_name and user_name.split(":")[0] in ("admin", "moderator", "member"):
             return
         
-        cache = _get_user_cache()
-        user_info = cache.get_user(user_id)
+        ident = _get_identity()
         
-        if user_info:
-            system_role = user_info.get("system_role", "member")
-            if system_role in ("admin", "moderator"):
-                source.user_name = f"{system_role}:{user_name}"
-                _logger.info("[FeishuUserCache] Injected role %s for %s", system_role, user_name)
+        # DM 自动 admin（能私聊 = 最高权限）
+        chat_type = getattr(source, "chat_type", None) or ""
+        if chat_type == "dm":
+            ident.auto_set_role_from_chat(user_id, "dm", user_name)
+        
+        role = ident.get_role(user_id)
+        if role in ("admin", "moderator"):
+            source.user_name = f"{role}:{user_name}"
+            _logger.warning("[FeishuIdentity] Injected role %s for %s", role, user_name)
+        else:
+            _logger.warning("[FeishuIdentity] role=%s for %s (no prefix)", role, user_name)
     except Exception as e:
-        _logger.warning("[FeishuUserCache] Failed to inject system_role: %s", e)
+        _logger.warning("[FeishuIdentity] Failed to inject system_role: %s", e)
 
 
 def _auto_insert_sender(source: Any, raw_event: Any) -> None:
-    """群消息自动入库 + 群成员全量同步。
-    
-    触发条件：群消息到达时。
-    1. 自动将发送者写入 feishu_users（open_id + name + chat_id）
-    2. 调飞书 API 拉群成员列表，补齐所有人的 feishu_role 和 chat_id
-    3. 同步 open_id ↔ user_id 的 linked_id 关联
-    
-    限流：每个 chat_id 每 5 分钟最多同步一次。
-    """
+    """群消息自动写入 feishu_identity（替代旧的 FeishuUserCache）。"""
     try:
         chat_type = getattr(source, "chat_type", "dm") or "dm"
         if chat_type == "dm":
             return
         
-        chat_id = getattr(source, "chat_id", "") or ""
         user_id = getattr(source, "user_id", "") or ""
         user_name = getattr(source, "user_name", "") or ""
         
-        if not chat_id or not user_id:
+        if not user_id:
             return
         
         # 跳过已带 role 前缀的名字
@@ -343,7 +390,7 @@ def _auto_insert_sender(source: Any, raw_event: Any) -> None:
         if ":" in clean_name and clean_name.split(":")[0] in ("admin", "moderator", "member"):
             clean_name = clean_name.split(":", 1)[1]
         
-        # 检查 sender_type，跳过 bot 消息
+        # 跳过 bot 消息
         try:
             if isinstance(raw_event, dict):
                 sender_type = raw_event.get("event", {}).get("sender", {}).get("sender_type", "")
@@ -356,181 +403,76 @@ def _auto_insert_sender(source: Any, raw_event: Any) -> None:
         except Exception:
             pass
         
-        # 步骤1：插入发送者
-        cache = _get_user_cache()
-        if clean_name:
-            cache.auto_insert_from_message(
-                open_id=user_id,
-                name=clean_name,
-                chat_id=chat_id,
-                feishu_role="member",  # 后续由全量同步覆盖
-            )
-        
-        # 步骤2：限流检查后同步群成员
-        _sync_group_members_if_needed(chat_id, cache)
+        ident = _get_identity()
+        # 群聊角色：不覆盖已有的 manual 角色
+        ident.auto_set_role_from_chat(user_id, "group", clean_name)
             
     except Exception as e:
-        _logger.debug("[FeishuUserCache] _auto_insert_sender error: %s", e)
+        _logger.debug("[FeishuIdentity] _auto_insert_sender error: %s", e)
 
 
-# ── 群成员同步（飞书 API）───────────────────────────────────────────
+# ── 群成员同步（简化版）───────────────────────────────────────────
 
-_sync_cache: dict[str, float] = {}  # chat_id → last_sync_ts
-_SYNC_COOLDOWN = 300  # 5 分钟
-_SYNC_FAIL_COOLDOWN = 600  # 失败后 10 分钟再试
+_sync_cache: dict[str, float] = {}
+_sync_fail_cache: dict[str, bool] = {}
+_SYNC_COOLDOWN = 300
+_SYNC_FAIL_COOLDOWN = 600
 
 
-def _sync_group_members_if_needed(chat_id: str, cache: "FeishuUserCache") -> None:
-    """限流：每个 chat_id 每 5 分钟最多同步一次群成员。失败后 10 分钟再试。"""
-    import time
+def _sync_group_members_if_needed(chat_id: str) -> None:
+    """限流：每个 chat_id 每 5 分钟最多同步一次。"""
     now = time.time()
     last = _sync_cache.get(chat_id, 0)
-    if now - last < _SYNC_COOLDOWN:
+    cooldown = _SYNC_FAIL_COOLDOWN if _sync_fail_cache.get(chat_id, False) else _SYNC_COOLDOWN
+    if now - last < cooldown:
         return
-    _sync_cache[chat_id] = now  # 预设冷却，无论成功失败
+    _sync_cache[chat_id] = now
     try:
-        _sync_group_members(chat_id, cache)
+        _sync_group_members(chat_id)
     except Exception as e:
-        _logger.warning("[FeishuUserCache] sync_group_members failed for %s: %s", chat_id[:16], e)
-        # 失败时延长冷却，避免每条消息都重试
-        _sync_cache[chat_id] = now + (_SYNC_FAIL_COOLDOWN - _SYNC_COOLDOWN)
+        _logger.debug("[FeishuIdentity] sync_group_members failed for %s: %s", chat_id[:16], e)
+        _sync_fail_cache[chat_id] = True
 
 
-def _get_tenant_access_token() -> str:
-    """从环境变量获取飞书 tenant_access_token。"""
+def _sync_group_members(chat_id: str) -> None:
+    """拉取飞书群成员名字，写入 feishu_identity（简化版）。"""
     import urllib.request
     import json as _json
-    
+
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
-        return ""
-    
+        return
+
+    # 获取 token
     req = urllib.request.Request(
         "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
         data=_json.dumps({"app_id": app_id, "app_secret": app_secret}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        headers={"Content-Type": "application/json"}, method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
-        data = _json.loads(resp.read())
-    return data.get("tenant_access_token", "")
+        token = _json.loads(resp.read()).get("tenant_access_token", "")
+    if not token:
+        return
 
-
-def _feishu_api_get(token: str, url: str) -> dict:
-    """GET 飞书 API，返回 JSON dict。"""
-    import urllib.request
-    import json as _json
-    
+    # 获取群成员
+    url = f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}/members?member_id_type=open_id&page_size=100"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req, timeout=15) as resp:
-        return _json.loads(resp.read())
+        data = _json.loads(resp.read()).get("data", {})
+    members = data.get("items", [])
 
-
-def _sync_group_members(chat_id: str, cache: "FeishuUserCache") -> None:
-    """拉取飞书群成员列表，同步到 SQLite。
-    
-    1. 获取群信息（群主 ID）→ 设置 feishu_role=owner
-    2. 获取群成员列表 → 所有人 chat_id + name
-    3. 自动关联 open_id ↔ user_id（同名记录互绑 linked_id）
-    """
-    token = _get_tenant_access_token()
-    if not token:
-        raise RuntimeError("Failed to get tenant_access_token")
-    
-    _logger.info("[FeishuUserCache] Syncing group members for chat=%s", chat_id[:16])
-    
-    # 获取群主信息
-    owner_id = ""
-    try:
-        chat_info = _feishu_api_get(
-            token,
-            f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}",
-        )
-        owner_id = chat_info.get("data", {}).get("owner_id", "")
-    except Exception:
-        _logger.debug("[FeishuUserCache] Failed to get chat info", exc_info=True)
-    
-    # 获取群成员列表
-    members = []
-    page_token = ""
-    while True:
-        url = (
-            f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}/members"
-            f"?member_id_type=open_id&page_size=100"
-        )
-        if page_token:
-            url += f"&page_token={page_token}"
-        try:
-            resp = _feishu_api_get(token, url)
-        except Exception:
-            _logger.debug("[FeishuUserCache] Failed to get members", exc_info=True)
-            break
-        
-        data = resp.get("data", {})
-        members.extend(data.get("items", []))
-        if not data.get("has_more"):
-            break
-        page_token = data.get("page_token", "")
-    
     if not members:
         return
-    
-    _logger.info("[FeishuUserCache] Found %d members in chat=%s", len(members), chat_id[:16])
-    
-    # 同步每个成员
+
+    ident = _get_identity()
     for m in members:
-        mid = m.get("member_id", "")
-        mname = m.get("name", "")
-        if not mid or not mname:
-            continue
-        
-        feishu_role = "owner" if mid == owner_id else "member"
-        # 写 group_members 表（精确 open_id + chat_id）
-        cache.upsert_group_member(
-            open_id=mid,
-            chat_id=chat_id,
-            feishu_role=feishu_role,
-        )
-        # 同时更新 feishu_users 基础信息（name）
-        cache.auto_insert_from_message(
-            open_id=mid,
-            name=mname,
-            chat_id=chat_id,
-            feishu_role=feishu_role,
-        )
-    
-    # 自动关联 linked_id（同名的 open_id 和 user_id 记录互绑）
-    _link_ids_by_name(cache)
+        oid = m.get("member_id", "")
+        name = m.get("name", "")
+        if oid and name:
+            ident.resolve(oid, chat_id)  # 只缓存名字
+
+    _logger.debug("[FeishuIdentity] Synced %d members for chat=%s", len(members), chat_id[:16])
 
 
-def _link_ids_by_name(cache: "FeishuUserCache") -> None:
-    """将同名的 open_id 和 user_id 记录互绑 linked_id。"""
-    try:
-        import sqlite3
-        with sqlite3.connect(cache.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT open_id, name, linked_id FROM feishu_users").fetchall()
-            
-            # 按 name 分组
-            by_name: dict[str, list[str]] = {}
-            for r in rows:
-                by_name.setdefault(r["name"], []).append(r["open_id"])
-            
-            # 同名且一个 ou_ 一个非 ou_ → 互绑
-            for name, ids in by_name.items():
-                ou_ids = [i for i in ids if i.startswith("ou_")]
-                other_ids = [i for i in ids if not i.startswith("ou_")]
-                for ou in ou_ids:
-                    for other in other_ids:
-                        conn.execute(
-                            "UPDATE feishu_users SET linked_id = ? WHERE open_id = ? AND (linked_id IS NULL OR linked_id = '')",
-                            (other, ou),
-                        )
-                        conn.execute(
-                            "UPDATE feishu_users SET linked_id = ? WHERE open_id = ? AND (linked_id IS NULL OR linked_id = '')",
-                            (ou, other),
-                        )
-            conn.commit()
-    except Exception:
-        _logger.debug("[FeishuUserCache] _link_ids_by_name failed", exc_info=True)
+

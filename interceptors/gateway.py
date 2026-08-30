@@ -57,7 +57,7 @@ def _wrap_handle_message(orig: Callable) -> Callable:
                 reply_anchor_id=self._reply_anchor_for_event(event),
             )
         except Exception:
-            _logger.warning("HLS: suppressed exception", exc_info=True)
+            _logger.warning("HLS: NORMALIZE hook failed", exc_info=True)
 
         # ── /aowen interrupt hint 检测 ──
         # 如果 agent 正在运行时收到 /aowen，发送提示卡片而非让 LLM 处理。
@@ -116,7 +116,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                 anchor_id=anchor_id,
             )
         except Exception:
-            _logger.warning("HLS: suppressed exception", exc_info=True)
+            _logger.warning("HLS: START hook failed", exc_info=True)
         # 提取 sender 信息，供 mem0x 插件使用（记忆溯源+用户隔离）
         _platform = getattr(source, "platform", None)
         msg_context = {
@@ -177,7 +177,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                             _hls_cleanup_ctx()
                             return None
             except Exception:
-                _logger.warning("HLS: suppressed exception", exc_info=True)
+                _logger.warning("HLS: card suppression check failed", exc_info=True)
 
         # ── None 结果：区分正常完成 vs 中断 vs abort ──
         if result is None:
@@ -218,7 +218,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                             anchor_id=anchor_id,
                         )
                     except Exception:
-                        _logger.warning("HLS: suppressed exception", exc_info=True)
+                        _logger.warning("HLS: interrupt hook failed", exc_info=True)
                 # else: card completed normally, Hermes returned None
                 #       to suppress text reply -- NOT an abort.
             else:
@@ -228,7 +228,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
 
                     on_message_aborted(message_id=mid)
                 except Exception:
-                    _logger.warning("HLS: suppressed exception", exc_info=True)
+                    _logger.warning("HLS: abort hook failed", exc_info=True)
         elif ctx and ctx.get("card_sent"):
             try:
                 from ..controller import get_controller
@@ -247,9 +247,9 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
                                 from .hooks import on_message_aborted
                                 on_message_aborted(message_id=mid)
                             except Exception:
-                                _logger.warning("HLS: suppressed exception", exc_info=True)
+                                _logger.warning("HLS: stuck-session abort hook failed", exc_info=True)
             except Exception:
-                _logger.warning("HLS: suppressed exception", exc_info=True)
+                _logger.warning("HLS: stuck-session check failed", exc_info=True)
         # v1.3.4 fix (P1): cleanup on normal exit path
         _hls_cleanup_ctx()
 
@@ -321,7 +321,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                         anchor_id=event_message_id,
                     )
                 except Exception:
-                    _logger.warning("HLS: suppressed exception", exc_info=True)
+                    _logger.warning("HLS: run_agent START hook failed", exc_info=True)
             else:
                 ctx["event_message_id"] = event_message_id
             # Copy to thread-local for thread-pool workers
@@ -511,7 +511,7 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                     result["already_sent"] = True
                     ctx["card_sent"] = True
             except Exception:
-                _logger.warning("HLS: suppressed exception", exc_info=True)
+                _logger.warning("HLS: run_agent COMPLETE hook failed", exc_info=True)
         # _msg_ctx now points to the child message's context. We must
         if _saved_parent_ctx is not None:
             _msg_ctx.set(_saved_parent_ctx)
@@ -607,7 +607,7 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
             if hasattr(self, "adapters") and source.platform:
                 adapter = self.adapters.get(source.platform)
         except Exception:
-            _logger.warning("HLS: suppressed exception", exc_info=True)
+            _logger.warning("HLS: bg-task adapter fetch failed", exc_info=True)
         if adapter:
             original_send = adapter.send
 
@@ -750,14 +750,32 @@ def _wrap_cron_deliver(orig: Callable) -> Callable:
                     if not cleaned.strip():
                         cleaned = content
 
-                    # Extract job name for footer display
+                    # 从 job dict 提取元数据
                     job_name = job.get("name", "") or job.get("id", "")[:12]
-                    await ctrl._do_cron_deliver(chat_id, cleaned.strip(), job_name=job_name)
+                    job_id = job.get("id", "")
+                    schedule = job.get("schedule")
+                    failure_streak = int(job.get("failure_streak", 0))
+                    last_error = job.get("last_error", "")
+
+                    # 从 content 检测状态（最高优先级）
+                    from ..card.special import _detect_cron_status
+                    status = _detect_cron_status(cleaned)
+
+                    await ctrl._do_cron_deliver(
+                        chat_id, cleaned.strip(),
+                        job_name=job_name,
+                        job_id=job_id,
+                        status=status,
+                        schedule=schedule,
+                        failure_streak=failure_streak,
+                        last_error=last_error,
+                    )
 
                     _logger.info(
-                        "lark-hls-v2 v%s: cron card delivered: chat=%s",
+                        "lark-hls-v2 v%s: cron card delivered: chat=%s status=%s",
                         __version__,
                         chat_id[:12],
+                        status,
                     )
                     try:
                         from gateway.platforms.base import SendResult

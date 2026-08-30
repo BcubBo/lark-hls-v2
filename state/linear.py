@@ -168,9 +168,18 @@ class UnifiedLinearState:
         self._current_reasoning = ""
         self._reasoning_start = 0.0
 
-    def finalize(self) -> None:
-        """Finalize any in-progress reasoning (called at message completion)."""
+    def finalize(self, footer_data: dict | None = None) -> dict | None:
+        """Finalize any in-progress reasoning (called at message completion).
+
+        同时将 bg_review_messages 合并到 footer_data，避免调用方手动复制。
+        """
         self._finalize_current_reasoning()
+        # ── 将 bg_review_messages 合并到 footer_data ──
+        if self.bg_review_messages:
+            if footer_data is None:
+                footer_data = {}
+            footer_data = {**footer_data, "bg_review_messages": list(self.bg_review_messages)}
+        return footer_data
 
     @property
     def current_reasoning_text(self) -> str:

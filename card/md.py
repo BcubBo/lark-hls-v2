@@ -133,7 +133,10 @@ def _strip_invalid_image_keys(text: str) -> str:
 
 
 def escape_markdown_asterisks(text: str) -> str:
-    """保护合法 markdown 格式，转义飞书会误配对的星号。
+    """转义飞书会误解析的裸星号（*），同时保护已有的合法 markdown 格式。
+
+    为什么叫 escape_markdown_asterisks：函数只处理 * 号的转义问题，
+    不涉及其他 markdown 语法（如 #、`、[] 等）。
 
     飞书 Markdown 解析器比 CommonMark 更激进——会把 2*4000+4*3000 这种
     数学表达式里的 * 当作斜体标记。本函数：
@@ -143,6 +146,12 @@ def escape_markdown_asterisks(text: str) -> str:
 
     ⚠️ 占位符用 \\x00 是因为这个字符在正常文本中不会出现。
     改了会怎样：如果占位符还原逻辑出错，飞书会显示 □ 方块字符。
+
+    Args:
+        text: 原始 markdown 文本
+
+    Returns:
+        转义后的安全文本，可直接发给飞书渲染
     """
     if '\x00' in text:
         text = text.replace('\x00', '')

@@ -34,7 +34,6 @@ import logging
 import threading
 import time
 import sys
-from datetime import datetime, timezone, timedelta
 from typing import Any, Callable
 
 from .. import __version__
@@ -325,8 +324,10 @@ def apply_patches() -> None:
         def _delayed_gw_patch():
             """Poll for gateway.run and apply GatewayRunner patches once available."""
             deadline = time.monotonic() + 60.0  # 60-second timeout
+            _poll_event = threading.Event()
             while time.monotonic() < deadline:
-                time.sleep(2.0)  # Poll every 2 seconds
+                remaining = deadline - time.monotonic()
+                _poll_event.wait(timeout=min(2.0, max(remaining, 0.01)))
                 if _apply_gateway_runner_patches():
                     _logger.info(
                         "lark-hls-v2: GatewayRunner patched (delayed)"

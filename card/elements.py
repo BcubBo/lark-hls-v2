@@ -55,9 +55,14 @@ from ..config import defaults as _defaults
 _panel_border_color: str = _defaults.PANEL_BORDER_COLOR
 _panel_header_color: str = _defaults.PANEL_HEADER_COLOR
 
-def _reload_panel_colors() -> None:
-    """Reload panel colors from Config (called on config reload)."""
-    global _panel_border_color, _panel_header_color
+# ── 惰性加载：首次访问时才从 Config 读取，避免模块导入时阻塞 ──
+_panel_colors_loaded: bool = False
+
+def _ensure_panel_colors_loaded() -> None:
+    """首次访问面板颜色时从 Config 加载（惰性初始化，线程安全）。"""
+    global _panel_border_color, _panel_header_color, _panel_colors_loaded
+    if _panel_colors_loaded:
+        return
     try:
         from ..config import Config
         cfg = Config()
@@ -65,9 +70,17 @@ def _reload_panel_colors() -> None:
         _panel_header_color = cfg.panel_header_color
     except Exception:
         pass
+    _panel_colors_loaded = True
 
-# Apply config overrides on first import (non-blocking, cached)
-_reload_panel_colors()
+def get_panel_border_color() -> str:
+    """获取面板边框颜色（惰性加载）。"""
+    _ensure_panel_colors_loaded()
+    return _panel_border_color
+
+def get_panel_header_color() -> str:
+    """获取面板标题栏颜色（惰性加载）。"""
+    _ensure_panel_colors_loaded()
+    return _panel_header_color
 
 __all__ = [
     'STREAMING_ELEMENT_ID',
@@ -286,8 +299,8 @@ def _build_unified_panel_placeholder(*, expanded: bool = False) -> dict:
             "text_size": "notation",
         },
         elements=[{"tag": "markdown", "content": " "}],
-        border_color=_panel_border_color,
-        header_color=_panel_header_color,
+        border_color=get_panel_border_color(),
+        header_color=get_panel_header_color(),
     )
     panel["element_id"] = UNIFIED_PANEL_ELEMENT_ID
     return panel
@@ -494,7 +507,7 @@ def build_unified_panel(*, reasoning_rounds: list, current_reasoning_text: str =
         "tag": "collapsible_panel",
         "expanded": expanded,
         "header": header,
-        "border": {"color": _panel_border_color, "corner_radius": "5px"},
+        "border": {"color": get_panel_border_color(), "corner_radius": "5px"},
         "vertical_spacing": "4px",
         "padding": "8px 8px 8px 8px",
         "elements": children,
@@ -1064,6 +1077,83 @@ def _compact(n: int) -> str:
 def _format_elapsed(ms: float) -> str:
     seconds = ms / 1000
     return f"{seconds:.1f}s" if seconds < 60 else f"{int(seconds // 60)}m {int(seconds % 60)}s"
+
+
+# ================================================================
+# ▍Cron 卡片 Footer — 增强版定时推送底部信息
+# ================================================================
+def _format_schedule(schedule: dict) -> str:
+    """_format_schedule()：将 schedule dict 格式化为可读字符串。
+    入参：schedule（dict）— job["schedule"]，含 kind/cron/interval 等字段
+    返回：str — 可读的调度描述（如 "cron: 30 8 * * *" 或 "每 8h"）
+    副作用：无
+    谁调用：_build_cron_footer()
+    """
+    kind = schedule.get("kind", "")
+    if kind == "cron":
+        expr = schedule.get("cron", "")
+        return f"cron: {expr}" if expr else ""
+    elif kind == "interval":
+        seconds = schedule.get("interval", 0)
+        if seconds >= 3600:
+            return f"每 {seconds // 3600}h"
+        elif seconds >= 60:
+            return f"每 {seconds // 60}m"
+        return f"每 {seconds}s"
+    elif kind == "once":
+        return "一次性"
+    return ""
+
+
+def _build_cron_footer(
+    job_name: str = "",
+    status: str = "success",
+    schedule: dict | None = None,
+    failure_streak: int = 0,
+    elapsed_ms: float = 0,
+) -> list[dict]:
+    """_build_cron_footer()：构建 cron 卡片的增强 footer。
+    入参：job_name — 任务名称；status — 执行状态；schedule — 调度配置；
+          failure_streak — 连续失败次数；elapsed_ms — 执行耗时（毫秒）
+    返回：list[dict] — footer 元素列表（hr + 行1 + 行2）
+    副作用：无
+    谁调用：build_cron_card()
+    """
+    from datetime import datetime
+    now = datetime.now().strftime("%H:%M")
+
+    # 行 1：标签 + 任务名 + schedule + 时间
+    parts = ["📌 定时任务"]
+    if job_name:
+        parts.append(job_name)
+    if schedule:
+        schedule_display = _format_schedule(schedule)
+        if schedule_display:
+            parts.append(schedule_display)
+    parts.append(now)
+
+    # 行 2：状态 + 耗时 + 失败次数
+    status_map = {"success": "✅ 成功", "error": "❌ 失败", "warning": "⚠️ 警告"}
+    meta_parts = [status_map.get(status, status)]
+    if elapsed_ms > 0:
+        meta_parts.append(f"耗时 {_format_elapsed(elapsed_ms)}")
+    if failure_streak > 0:
+        meta_parts.append(f"连续失败 {failure_streak} 次")
+
+    elements: list[dict] = [{"tag": "hr"}]
+    elements.append({
+        "tag": "markdown",
+        "content": " · ".join(parts),
+        "text_size": "notation",
+    })
+    if len(meta_parts) > 1:  # 只在有额外信息时显示第二行
+        elements.append({
+            "tag": "markdown",
+            "content": " · ".join(meta_parts),
+            "text_size": "notation",
+        })
+
+    return elements
 
 
 # ── 静态卡片 footer ──────────────────────────────────────────────────

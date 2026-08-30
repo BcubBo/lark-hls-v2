@@ -97,7 +97,7 @@ class StreamCardController(UnifiedControllerMixin):
         self._cfg = Config()
         self._client: FeishuClient | None = None
         self._initialized = False
-        self._init_lock = asyncio.Lock()
+        self._init_lock = threading.Lock()
         self._session_ttl = self._cfg.card_duration_sec
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pending_tasks: set[asyncio.Task] = set()
@@ -149,7 +149,7 @@ class StreamCardController(UnifiedControllerMixin):
     async def _ensure_init(self) -> None:
         if self._initialized:
             return
-        async with self._init_lock:
+        with self._init_lock:
             if self._initialized:
                 return
             app_id = self._cfg.feishu_app_id or self._cfg.env_app_id
@@ -784,13 +784,32 @@ class StreamCardController(UnifiedControllerMixin):
     # _upgrade_loading_hint_to_thinking, _linear_on_thinking,
     # _finalize_card, _complete_card_flow are all implemented in card_flow.py
 
-    async def _do_cron_deliver(self, chat_id: str, content: str, *, job_name: str = "") -> None:
-        """Cron 投递 — 发送卡片到指定 chat."""
+    async def _do_cron_deliver(
+        self,
+        chat_id: str,
+        content: str,
+        *,
+        job_name: str = "",
+        job_id: str = "",
+        status: str = "success",
+        schedule: dict | None = None,
+        failure_streak: int = 0,
+        last_error: str = "",
+    ) -> None:
+        """Cron 投递 — 发送卡片到指定 chat。新参数全部有默认值，向后兼容。"""
         from .card import build_cron_card
-        _logger.info("cron _do_cron_deliver: chat=%s content_len=%d job=%s", chat_id[:12], len(content), job_name)
+        _logger.info("cron _do_cron_deliver: chat=%s content_len=%d job=%s status=%s", chat_id[:12], len(content), job_name, status)
         await self._ensure_init()
         assert self._client is not None
-        card = build_cron_card(content, job_name=job_name)
+        card = build_cron_card(
+            content,
+            job_name=job_name,
+            status=status,
+            job_id=job_id,
+            schedule=schedule,
+            failure_streak=failure_streak,
+            last_error=last_error,
+        )
         await self._client.send_card_to_chat(chat_id, card)
 
     async def _do_gateway_deliver(
@@ -841,12 +860,32 @@ class StreamCardController(UnifiedControllerMixin):
             return False
 
     async def on_cron_deliver_async(
-        self, *, chat_id: str, content: str, loop: asyncio.AbstractEventLoop,
+        self,
+        *,
+        chat_id: str,
+        content: str,
+        loop: asyncio.AbstractEventLoop,
+        category: str = "",
+        job_name: str = "",
+        job_id: str = "",
+        status: str = "success",
+        schedule: dict | None = None,
+        failure_streak: int = 0,
+        last_error: str = "",
     ) -> bool:
         if not self.enabled or not content or not chat_id:
             return False
         try:
-            await self._do_cron_deliver(chat_id, content)
+            await self._do_cron_deliver(
+                chat_id,
+                content,
+                job_name=job_name,
+                job_id=job_id,
+                status=status,
+                schedule=schedule,
+                failure_streak=failure_streak,
+                last_error=last_error,
+            )
             return True
         except Exception:
             return False

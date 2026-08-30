@@ -259,33 +259,28 @@ class Config:
 
     # -- Card-level header ---------------------------------------------------
 
-    @property
-    def card_header_title(self) -> str:
+    def _card_header_field(self, key: str, default: str) -> str:
+        """三层 fallback：card_header dict → 顶层旧字段 → 默认值。"""
         header = self._plugin_sec().get("card_header", {})
         if not isinstance(header, dict):
-            return str(self._plugin_sec().get("card_header_title", defaults.CARD_HEADER_TITLE))
-        return str(header.get("title", defaults.CARD_HEADER_TITLE))
+            return str(self._plugin_sec().get(f"card_header_{key}", default))
+        return str(header.get(key, default))
+
+    @property
+    def card_header_title(self) -> str:
+        return self._card_header_field("title", defaults.CARD_HEADER_TITLE)
 
     @property
     def card_header_subtitle(self) -> str:
-        header = self._plugin_sec().get("card_header", {})
-        if not isinstance(header, dict):
-            return str(self._plugin_sec().get("card_header_subtitle", defaults.CARD_HEADER_SUBTITLE))
-        return str(header.get("subtitle", defaults.CARD_HEADER_SUBTITLE))
+        return self._card_header_field("subtitle", defaults.CARD_HEADER_SUBTITLE)
 
     @property
     def card_header_icon(self) -> str:
-        header = self._plugin_sec().get("card_header", {})
-        if not isinstance(header, dict):
-            return str(self._plugin_sec().get("card_header_icon", defaults.CARD_HEADER_ICON))
-        return str(header.get("icon", defaults.CARD_HEADER_ICON))
+        return self._card_header_field("icon", defaults.CARD_HEADER_ICON)
 
     @property
     def card_header_template(self) -> str:
-        header = self._plugin_sec().get("card_header", {})
-        if not isinstance(header, dict):
-            return str(self._plugin_sec().get("card_header_template", defaults.CARD_HEADER_TEMPLATE))
-        tpl = str(header.get("template", defaults.CARD_HEADER_TEMPLATE))
+        tpl = self._card_header_field("template", defaults.CARD_HEADER_TEMPLATE)
         valid = ("blue", "green", "orange", "red", "purple", "indigo", "turquoise", "yellow", "grey", "violet", "wathet", "carmine")
         return tpl if tpl in valid else defaults.CARD_HEADER_TEMPLATE
 

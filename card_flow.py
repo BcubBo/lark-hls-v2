@@ -65,6 +65,20 @@ from .state.linear import UnifiedLinearState
 from .state.text import split_reasoning_text
 from .card.quotes import QuoteManager
 
+# ── Markdown 处理链缓存：避免重复执行 truncate_unclosed_markdown(
+# escape_markdown_asterisks(optimize_markdown_style(text))) ──
+from functools import lru_cache
+
+@lru_cache(maxsize=128)
+def _cached_markdown_pipeline(text: str) -> str:
+    """缓存的 markdown 处理链：optimize → escape → truncate。
+
+    同一文本在多次 flush 时只处理一次，减少 CPU 开销。
+    """
+    return truncate_unclosed_markdown(
+        escape_markdown_asterisks(optimize_markdown_style(text))
+    )
+
 # Module-level singleton for dynamic quotes
 # ▍动态语录单例 — 卡片 header 和 panel 标题的动漫台词
 _quote_manager: QuoteManager | None = None
@@ -523,7 +537,7 @@ class UnifiedControllerMixin:
 
             # Note: skip markdown optimization during streaming for performance;
             if state.answer_dirty:
-                content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
+                content = _cached_markdown_pipeline(state.answer_text or " ")
                 session.sequence += 1
                 try:
                     await self._client.cardkit_stream_element(
@@ -637,7 +651,7 @@ class UnifiedControllerMixin:
 
         # Note: skip markdown optimization during streaming for performance;
         if state.answer_dirty and "answer" in session._creation_stages:
-            content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
+            content = _cached_markdown_pipeline(state.answer_text or " ")
             session.sequence += 1
             # v2.9.1: First push uses stream_element (typewriter), subsequent
             # updates use partial_update_element (instant replace) to avoid
@@ -841,7 +855,7 @@ class UnifiedControllerMixin:
 
                 # ── Flush remaining answer text ──
                 if state.answer_dirty and "answer" in session._creation_stages and not session._streaming_closed:
-                    content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
+                    content = _cached_markdown_pipeline(state.answer_text or " ")
                     try:
                         session.sequence += 1
                         _logger.info(
@@ -1317,7 +1331,7 @@ class UnifiedControllerMixin:
 
                 # ── Drain answer text ──
                 if state.answer_dirty and "answer" in session._creation_stages:
-                    content = truncate_unclosed_markdown(escape_markdown_asterisks(optimize_markdown_style(state.answer_text or " ")))
+                    content = _cached_markdown_pipeline(state.answer_text or " ")
                     if session._streaming_closed:
                         # streaming 已关闭，直接 fallback 避免无谓的 stream_element 失败
                         session.sequence += 1
@@ -1417,16 +1431,11 @@ class UnifiedControllerMixin:
             return False
 
         # ── Step 4: Finalize state ──
-        if state:
-            state.finalize()
-
         # ── Build footer data ──
         footer_data = session.footer
-        # v1.3.4 fix (P2): bg_review_messages 存在 state 中但从未传给
-        if state and state.bg_review_messages:
-            if footer_data is None:
-                footer_data = {}
-            footer_data = {**footer_data, "bg_review_messages": list(state.bg_review_messages)}
+        if state:
+            footer_data = state.finalize(footer_data)
+
         is_aborted = getattr(session, "_was_aborted", False) or session.state == ABORTED
         error_message = getattr(session, "error_message", "")
         # v1.2.0 B1 fix: is_error 必须兼顾 error_message。
