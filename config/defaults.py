@@ -2,8 +2,8 @@
 # 所有配置项的默认值都在这里。Config 类从 config.yaml 读取，
 # 读不到就 fallback 到这里的值。
 # 新增配置项：先在这里加默认值，再在 schema.py 加 @property。
-# 原 docstring: Centralized default values for lark-hls-v2 v2.
 """
+Centralized default values for lark-hls-v2 v2.
 ALL defaults live here. Changing footer layout, flush intervals,
 card TTL, etc. only requires editing this single file.
 
@@ -125,3 +125,13 @@ FEISHU_BASE_URL: str = "https://open.feishu.cn/open-apis"
 # Config reload cache TTL (seconds)
 # ---------------------------------------------------------------------------
 RELOAD_CACHE_TTL: float = 60.0
+
+# ---------------------------------------------------------------------------
+# Cron card 改进常量
+# ---------------------------------------------------------------------------
+# 内容折叠阈值（字符数），超过此值自动折叠到 collapsible_panel
+CRON_CONTENT_FOLD_THRESHOLD: int = 800
+# 折叠时预览长度（字符数）
+CRON_CONTENT_PREVIEW_LEN: int = 300
+# Cron 卡片 JSON 安全阈值（低于 30KB 飞书软限，留余量）
+CRON_CARD_MAX_CHARS: int = 25000

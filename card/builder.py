@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 import json
+import logging
 
 from typing import TYPE_CHECKING, Any
 
@@ -52,6 +53,8 @@ __all__ = [
     'build_streaming_card_v2',
     '_enforce_card_element_limit',
 ]
+
+_logger = logging.getLogger("lark_hls_v2")
 
 # ⚠️ 飞书 Card 2.0 硬限制：所有含 tag 键的 JSON 对象（含嵌套）总数 ≤ 200。
 # 超限会报 300312 schema error，卡片完全渲染失败。
@@ -204,7 +207,7 @@ def build_streaming_card_v2(
                 template=card_header_template or _def.CARD_HEADER_TEMPLATE,
             )
         except Exception:
-            pass  # 优雅降级 — 没有 header 卡片也能用
+            _logger.debug("card header build failed, using fallback", exc_info=True)
 
     # ── 流式回答元素（answer 在 panel 前面）──
     if show_streaming_element and include_answer_element:

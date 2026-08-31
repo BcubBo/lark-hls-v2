@@ -463,7 +463,7 @@ class FeishuClient:
                 )
             elapsed_ms = (_time.monotonic() - t0) * 1000
             if elapsed_ms > 200:
-                pass
+                _logger.debug("stream_element slow: %.0fms", elapsed_ms)
             self._check(resp, "cardkit_stream_element")
 
         last_error: FeishuAPIError | None = None

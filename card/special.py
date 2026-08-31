@@ -24,7 +24,7 @@ import ast
 from typing import Any
 
 from .i18n import _LOCALES, _T, _i18n, _t
-from .elements import _escape_md, build_card_header, _build_static_footer
+from .elements import _escape_md, build_card_header, _build_static_footer, _build_cron_footer, _collapsible_panel
 from .md import (
     _MAX_CRON_TABLES,
     _downgrade_tables,
@@ -120,22 +120,131 @@ def normalize_clarify_choices(choices: list[str] | None) -> list[str]:
 
 
 # ================================================================
-# ▍build_cron_card — 定时推送卡片
-# markdown 内容 + 美化 header，无交互元素。
+# ▍build_cron_card — 定时推送卡片（改进版：动态颜色 + 内容折叠 + 增强 footer）
 # ================================================================
 
-def build_cron_card(content: str, *, title: str = "⏰ 定时任务", job_name: str = "") -> dict[str, Any]:
+def _detect_cron_status(content: str) -> str:
+    """_detect_cron_status()：从 content 中推断执行状态。
+    优先级：内容检测 > job.failure_streak > 默认 success。
+    返回："success" | "error" | "warning"
+    """
+    if not content:
+        return "success"
+    lower = content.lower().strip()
+    # 红色：明确的错误信号
+    error_signals = ["⚠️ cron", "failed:", "error:", "traceback", "exception"]
+    if any(s in lower for s in error_signals):
+        return "error"
+    # 橙色：警告信号
+    warning_signals = ["warning", "⚠️", "deprecated", "timeout"]
+    if any(s in lower for s in warning_signals):
+        return "warning"
+    return "success"
+
+
+def _build_cron_header(
+    job_name: str,
+    status: str,
+    elapsed_ms: float = 0,
+) -> dict:
+    """_build_cron_header()：构建 cron 卡片的结构化 header。
+    状态 → 颜色映射：success=green, error=red, warning=orange。
+    """
+    status_map = {
+        "success": ("green", "✅"),
+        "error": ("red", "❌"),
+        "warning": ("orange", "⚠️"),
+    }
+    template, emoji = status_map.get(status, ("green", "✅"))
+    title = f"{emoji} {job_name or '定时任务'}"
+    subtitle = ""
+    if elapsed_ms > 0:
+        from .elements import _format_elapsed
+        subtitle = _format_elapsed(elapsed_ms)
+    return build_card_header(title=title, subtitle=subtitle, template=template)
+
+
+def _build_cron_content_elements(content: str) -> list[dict]:
+    """_build_cron_content_elements()：构建 cron 卡片的内容区域，超长内容自动折叠。
+    短内容（≤800字）直接展示；长内容用 collapsible_panel 折叠。
+    """
+    from ..config import defaults as _def
+    # 预处理：标题降级 + 表格降级 + 星号转义
+    processed = optimize_markdown_style(content)
+    processed = _downgrade_tables(processed, limit=_MAX_CRON_TABLES)
+    if len(processed) <= _def.CRON_CONTENT_FOLD_THRESHOLD:
+        # 短内容：直接展示
+        chunks = _split_long_text(processed)
+        return [{"tag": "markdown", "content": c} for c in chunks if c.strip()]
+    # 长内容：折叠 — preview 300 字 + collapsible_panel（默认收起）
+    preview = processed[:_def.CRON_CONTENT_PREVIEW_LEN].replace("\n", " ").strip()
+    full_chunks = _split_long_text(processed)
+    panel = _collapsible_panel(
+        expanded=False,
+        title_el={
+            "tag": "plain_text",
+            "content": f"📄 完整内容 ({len(processed)} 字)",
+            "text_size": "notation",
+        },
+        elements=[{"tag": "markdown", "content": c} for c in full_chunks if c.strip()],
+        border_color="grey",
+        header_color="grey",
+    )
+    return [
+        {"tag": "markdown", "content": f"{preview}..."},
+        panel,
+    ]
+
+
+def _enforce_cron_card_limit(content: str) -> str:
+    """_enforce_cron_card_limit()：截断超长 cron 内容，保留首尾。
+    飞书 CardKit 2.0 单卡 JSON 大小软限 ≈ 30KB。
+    """
+    from ..config import defaults as _def
+    max_chars = _def.CRON_CARD_MAX_CHARS
+    if len(content) <= max_chars:
+        return content
+    head_len = int(max_chars * 0.6)
+    tail_len = int(max_chars * 0.35)
+    hint = f"\n\n--- ⚡ 内容已截断（原始 {len(content)} 字，显示前 {head_len} + 后 {tail_len} 字）---\n\n"
+    return content[:head_len] + hint + content[-tail_len:]
+
+
+def build_cron_card(
+    content: str,
+    *,
+    title: str = "⏰ 定时任务",
+    job_name: str = "",
+    status: str = "success",
+    job_id: str = "",
+    schedule: dict | None = None,
+    failure_streak: int = 0,
+    last_error: str = "",
+    elapsed_ms: float = 0,
+) -> dict[str, Any]:
     """build_cron_card()：契约
-    入参：content（str）— markdown 格式的推送内容；title（str）— header 标题；job_name（str）— 任务名称
+    入参：content — markdown 格式的推送内容；title — header 标题（兼容旧调用）；
+          job_name — 任务名称；status — 执行状态；job_id — 任务 ID；
+          schedule — 调度配置 dict；failure_streak — 连续失败次数；
+          last_error — 错误摘要；elapsed_ms — 执行耗时（毫秒）
     返回：dict — CardKit 2.0 schema 卡片 JSON
     副作用：无
     谁调用：controller._do_cron_deliver()
     改动影响：改 schema 版本会影响飞书渲染
     """
+    # 截断超长内容
+    content = _enforce_cron_card_limit(content)
+
+    # 动态 header：status → 颜色
+    header = _build_cron_header(job_name, status, elapsed_ms)
+    # 如果调用方传了 title 且没有 job_name，保留原始 title（向后兼容）
+    if not job_name and title != "⏰ 定时任务":
+        header = build_card_header(title=title, template="green")
+
     card: dict[str, Any] = {
         "schema": "2.0",
         "config": {"locales": _LOCALES},
-        "header": build_card_header(title=title, template="green"),
+        "header": header,
         "body": {"elements": []},
     }
     if not content.strip():
@@ -144,10 +253,16 @@ def build_cron_card(content: str, *, title: str = "⏰ 定时任务", job_name: 
     summary = content[:_def.SUMMARY_MAX_LENGTH].replace("\n", " ").replace("```", "").strip()
     if summary:
         card["config"]["summary"] = {"content": summary}
-    for chunk in _split_long_text(_downgrade_tables(optimize_markdown_style(content), limit=_MAX_CRON_TABLES)):
-        if chunk.strip():
-            card["body"]["elements"].append({"tag": "markdown", "content": chunk})
-    card["body"]["elements"].extend(_build_static_footer("定时任务", extra_info=job_name))
+    # 内容区域：短内容直接展示，长内容折叠
+    card["body"]["elements"].extend(_build_cron_content_elements(content))
+    # 增强 footer：状态 + schedule + 耗时 + 失败次数
+    card["body"]["elements"].extend(_build_cron_footer(
+        job_name=job_name,
+        status=status,
+        schedule=schedule,
+        failure_streak=failure_streak,
+        elapsed_ms=elapsed_ms,
+    ))
     return card
 
 

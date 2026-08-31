@@ -185,7 +185,7 @@ def register(ctx: "PluginContext") -> None:
     try:
         from ..interceptors import apply_patches
         apply_patches()
-        _logger.info("lark-hls-v2 v%s: patches applied", __version__)
+        _logger.info("lark-hls-v2 v%s: patches applied OK", __version__)
     except Exception:
         _logger.exception("lark-hls-v2 v%s: failed to apply patches", __version__)
 

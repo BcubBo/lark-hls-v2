@@ -305,14 +305,12 @@ def _wrap_feishu_adapter_edit(orig_edit: Callable) -> Callable:
                     # Check if gateway_cards feature is enabled
                     cfg = _get_config()
                     if cfg.gateway_cards:
-                        cleaned = content
-
-                        category = _classify_gateway_message(cleaned)
+                        category = _classify_gateway_message(content)
                         updated = await ctrl._do_gateway_card_update(
                             chat_id=card_info.get("chat_id", chat_id),
                             card_msg_id=message_id,
                             card_id=card_info.get("card_id"),
-                            content=cleaned.strip(),
+                            content=content.strip(),
                             category=category,
                         )
                         if updated:

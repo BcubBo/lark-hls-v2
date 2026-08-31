@@ -294,10 +294,10 @@ def apply_patches() -> None:
     注意：用函数属性 _applied 做幂等守卫，多次调用只执行一次
     """
     if getattr(apply_patches, "_applied", False):
+        _logger.warning("lark-hls-v2: apply_patches already applied, skipping")
         return
-    apply_patches._applied = True  # type: ignore[attr-defined]
 
-    _logger.info("lark-hls-v2 v%s: apply_patches() starting", __version__)
+    _logger.warning("lark-hls-v2 v%s: apply_patches() starting", __version__)
 
     compat = HermesCompat()
     # ``layout`` is kept for the doctor CLI's ``hermes_layout`` print and
@@ -381,7 +381,7 @@ def apply_patches() -> None:
                 getattr(_cron_mod, "__name__", "?"),
             )
         except (AttributeError, TypeError) as e:
-            _logger.debug("lark-hls-v2: cron.scheduler patch failed (%s)", e)
+            _logger.warning("lark-hls-v2: cron.scheduler patch failed (%s)", e)
 
     feishu_patched = False
     FeishuAdapter = compat.feishu_adapter_class
@@ -422,6 +422,8 @@ def apply_patches() -> None:
 
     # Deferred direct patch: retry AIAgent.run_conversation after Hermes
     # finishes loading all modules (belt-and-suspenders for lazy imports)
+
+    apply_patches._applied = True  # type: ignore[attr-defined]
 
 def _apply_feishu_adapter_patches(FeishuAdapter, *, is_repatch: bool = False) -> bool:
     """_apply_feishu_adapter_patches(): 契约
