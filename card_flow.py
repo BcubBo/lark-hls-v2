@@ -1113,10 +1113,23 @@ class UnifiedControllerMixin:
                 session._streaming_closed = True
             else:
                 _logger.info(
-                    "finalize_card: streaming already closed, skipping close_streaming card=%s",
+                    "finalize_card: streaming already closed, attempting idempotent close_streaming card=%s",
                     card_id[:12],
                 )
-                if seal_summary:
+                # ── Even if streaming was closed, call close_streaming once more (idempotent)
+                # because Feishu server may not have actually closed it (three-dots residual) ──
+                _idempotent_close_ok = False
+                try:
+                    session.sequence += 1
+                    await self._client.cardkit_close_streaming(
+                        card_id, sequence=session.sequence, summary=seal_summary,
+                    )
+                    _idempotent_close_ok = True
+                except Exception:
+                    pass  # ignore — streaming may already be closed on server
+                # Only call update_summary if idempotent close_streaming failed
+                # (close_streaming already includes summary, so skip redundant call)
+                if seal_summary and not _idempotent_close_ok:
                     try:
                         session.sequence += 1
                         await self._client.cardkit_update_summary(
@@ -1402,16 +1415,38 @@ class UnifiedControllerMixin:
                 exc_info=True,
             )
 
-        # ── Final drain check: log warning if dirty data remains ──
+        # ── Final drain check: flush remaining dirty data directly ──
         if state is not None and (state.answer_dirty or state.panel_dirty or state.tool_steps_dirty):
             _logger.warning(
                 "linear complete: dirty data remains after %d drain rounds "
                 "answer_dirty=%s panel_dirty=%s tool_steps_dirty=%s msg=%s — "
-                "will be flushed by finalize_card before close_streaming",
+                "attempting direct flush via partial_update_element",
                 _DRAIN_ROUNDS_MAX,
                 state.answer_dirty, state.panel_dirty, state.tool_steps_dirty,
                 (session.message_id or "?")[:12],
             )
+            # Try to flush dirty answer content via partial_update_element
+            # (works even when streaming is closed — avoids footer-before-content)
+            if state.answer_dirty and session.card_id:
+                try:
+                    content = _cached_markdown_pipeline(state.answer_text or " ")
+                    session.sequence += 1
+                    ok = await _fallback_write_answer(
+                        self._client, session.card_id, content,
+                        sequence=session.sequence,
+                    )
+                    if ok:
+                        state.answer_dirty = False
+                        _logger.info(
+                            "linear complete: dirty answer flushed via partial_update_element card=%s",
+                            session.card_id[:12],
+                        )
+                except Exception:
+                    _logger.warning(
+                        "linear complete: dirty answer flush failed msg=%s",
+                        (session.message_id or "?")[:12],
+                        exc_info=True,
+                    )
 
         # ── Step 3: Mark flush as completed — no more updates accepted ──
         session.flush.mark_completed()

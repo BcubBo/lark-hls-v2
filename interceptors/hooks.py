@@ -58,6 +58,9 @@ except ImportError:
         @staticmethod
         def get_user_name(*a, **kw):
             return None
+        @staticmethod
+        def resolve(open_id, chat_id=None, sender_type=None):
+            return open_id
 
 _logger = logging.getLogger("lark_hls_v2")
 
@@ -138,7 +141,7 @@ def on_feishu_normalize(
         source.thread_id = None
     
     # Inject system_role into source.user_name for AI permission checking
-    _inject_system_role(source)
+    _inject_system_role(source, event)
     
     # Auto-insert sender into feishu_users database (group context)
     _auto_insert_sender(source, raw)
@@ -338,18 +341,70 @@ def _get_identity() -> "_FeishuIdentity":
         _identity_cache = _FeishuIdentity()
     return _identity_cache
 
-def _inject_system_role(source: Any) -> None:
+def _extract_sender_open_id(raw_event: Any) -> str:
+    """Extract sender open_id from raw Feishu event.
+    
+    Handles both dict and lark_oapi object形态:
+      raw_message.event.sender.sender_id.open_id
+    """
+    try:
+        if isinstance(raw_event, dict):
+            return (raw_event.get("event", {}).get("sender", {})
+                    .get("sender_id", {}).get("open_id", "") or "")
+        event_obj = getattr(raw_event, "event", None)
+        sender = getattr(event_obj, "sender", None) if event_obj else None
+        sender_id = getattr(sender, "sender_id", None) if sender else None
+        return getattr(sender_id, "open_id", "") or ""
+    except Exception:
+        return ""
+
+
+def _inject_system_role(source: Any, event: Any) -> None:
     """Inject system_role into source.user_name.
     
     Changes user_name from '何博洋' to 'admin:何博洋' so AI can see the role
     and apply SOUL.md permission rules during reasoning.
+    
+    For external users (contact API fails → source.user_name empty), extracts
+    sender open_id from raw event and resolves name via group members API.
     """
     try:
         user_id = getattr(source, "user_id", None) or ""
         user_name = getattr(source, "user_name", None) or ""
         
-        if not user_id or not user_name:
+        # Extract sender open_id from raw event (authoritative source)
+        raw = getattr(event, "raw_message", None)
+        raw_event = raw.get("event") if isinstance(raw, dict) else getattr(raw, "event", None)
+        sender_open_id = _extract_sender_open_id(raw_event or {})
+        
+        # Prefer sender open_id over source.user_id (more reliable for group messages)
+        if sender_open_id and not user_id:
+            user_id = sender_open_id
+            source.user_id = user_id
+        elif sender_open_id and user_id != sender_open_id:
+            # source.user_id might be tenant-scoped; sender open_id is what we need for identity
+            user_id = sender_open_id
+        
+        if not user_id:
+            _logger.warning("[FeishuIdentity] No user_id available, skipping role injection")
             return
+        
+        # If user_name is empty (external user, contact API failed),
+        # resolve name via feishu_identity (group members API works for external users)
+        if not user_name:
+            try:
+                ident = _get_identity()
+                chat_id = getattr(source, "chat_id", None) or ""
+                resolved_name = ident.resolve(user_id, chat_id=chat_id)
+                if resolved_name and resolved_name != user_id:
+                    user_name = resolved_name
+                    source.user_name = user_name
+                    _logger.warning("[FeishuIdentity] Resolved name for %s: %s", user_id, user_name)
+            except Exception as e:
+                _logger.warning("[FeishuIdentity] Failed to resolve name for %s: %s", user_id, e)
+            if not user_name:
+                _logger.warning("[FeishuIdentity] No user_name for %s, skipping role injection", user_id)
+                return
         
         # Skip if already has role prefix
         if ":" in user_name and user_name.split(":")[0] in ("admin", "moderator", "member"):
@@ -367,7 +422,8 @@ def _inject_system_role(source: Any) -> None:
             source.user_name = f"{role}:{user_name}"
             _logger.warning("[FeishuIdentity] Injected role %s for %s", role, user_name)
         else:
-            _logger.warning("[FeishuIdentity] role=%s for %s (no prefix)", role, user_name)
+            source.user_name = f"member:{user_name}"
+            _logger.warning("[FeishuIdentity] Injected role member for %s", user_name)
     except Exception as e:
         _logger.warning("[FeishuIdentity] Failed to inject system_role: %s", e)
 
