@@ -430,18 +430,48 @@ def build_panel_children(*, reasoning_rounds: list, current_reasoning_text: str 
     if panel_events:
         rendered_tools: set[int] = set()
 
+        # 合并连续的短推理片段（<30字符）为一个显示块
+        MERGE_THRESHOLD = 30
+        merged_reasoning_text = ""
+        merged_reasoning_idx = None
+        merged_elapsed = 0.0
+
+        def _flush_merged_reasoning():
+            nonlocal merged_reasoning_text, merged_reasoning_idx, merged_elapsed
+            if merged_reasoning_text and show_reasoning:
+                title_div = _build_reasoning_round_title(merged_reasoning_idx, merged_elapsed, finalized=True)
+                children.append(title_div)
+                preview = merged_reasoning_text.strip() if merged_reasoning_text.strip() else " "
+                children.append({"tag": "markdown", "content": _truncate_reasoning(preview), "text_size": "notation"})
+            merged_reasoning_text = ""
+            merged_reasoning_idx = None
+            merged_elapsed = 0.0
+
         for kind, idx in panel_events:
             if kind == "reasoning" and show_reasoning and idx < len(reasoning_rounds):
                 r = reasoning_rounds[idx]
-                title_div = _build_reasoning_round_title(r.index, r.elapsed_ms, finalized=True)
-                children.append(title_div)
-                preview = r.text.strip() if r.text.strip() else " "
-                children.append({"tag": "markdown", "content": _truncate_reasoning(preview), "text_size": "notation"})
+                if len(r.text.strip()) < MERGE_THRESHOLD:
+                    # 短片段：累积到合并缓冲区
+                    if merged_reasoning_idx is None:
+                        merged_reasoning_idx = r.index
+                    merged_reasoning_text += r.text
+                    merged_elapsed += r.elapsed_ms
+                else:
+                    # 长片段：先 flush 之前的短片段，再显示当前长片段
+                    _flush_merged_reasoning()
+                    title_div = _build_reasoning_round_title(r.index, r.elapsed_ms, finalized=True)
+                    children.append(title_div)
+                    preview = r.text.strip() if r.text.strip() else " "
+                    children.append({"tag": "markdown", "content": _truncate_reasoning(preview), "text_size": "notation"})
             elif kind == "tool" and idx < len(tool_steps):
+                # tool 事件前先 flush 之前累积的短推理片段
+                _flush_merged_reasoning()
                 if idx not in rendered_tools:
                     step = tool_steps[idx]
                     children.extend(_build_tool_step_elements(step))
                     rendered_tools.add(idx)
+        # flush 最后一批
+        _flush_merged_reasoning()
 
         # In-progress reasoning.
         if current_reasoning_text and show_reasoning:
