@@ -119,6 +119,19 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
             _logger.warning("HLS: START hook failed", exc_info=True)
         # 提取 sender 信息，供 mem0x 插件使用（记忆溯源+用户隔离）
         _platform = getattr(source, "platform", None)
+        # 从 raw Feishu event 提取 sender open_id（ou_xxx 格式）
+        _sender_open_id = ""
+        try:
+            _raw = getattr(event, "raw_message", None)
+            _raw_event = _raw.get("event") if isinstance(_raw, dict) else getattr(_raw, "event", None)
+            if isinstance(_raw_event, dict):
+                _sender_open_id = (_raw_event.get("sender", {}).get("sender_id", {}).get("open_id", "") or "")
+            elif _raw_event is not None:
+                _s = getattr(_raw_event, "sender", None)
+                _sid = getattr(_s, "sender_id", None) if _s else None
+                _sender_open_id = getattr(_sid, "open_id", "") or "" if _sid else ""
+        except Exception:
+            pass
         msg_context = {
             "message_id": mid,
             "chat_id": chat_id,
@@ -129,6 +142,7 @@ def _wrap_handle_message_with_agent(orig: Callable) -> Callable:
             # 记忆溯源+用户隔离字段
             "user_id": getattr(source, "user_id", "") or "",
             "user_name": getattr(source, "user_name", "") or "",
+            "sender_open_id": _sender_open_id,  # 飞书 open_id（ou_xxx），用于 access_control 校验
             "chat_type": getattr(source, "chat_type", "dm") or "dm",
             "platform": _platform.value if _platform else "",
             "session_id": "",  # filled by _wrap_run_agent (session_id not available here yet)
