@@ -1,1 +1,5 @@
 __pycache__/
+feishu/users.db
+interceptors/adapter.py.bak
+*.bak
+*.bak.*

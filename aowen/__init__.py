@@ -20,6 +20,72 @@ from typing import Any
 
 _logger = logging.getLogger("lark_hls_v2")
 
+# Commands any feishu user may run without admin rights.
+_AOWEN_PUBLIC_SUBCOMMANDS = frozenset({"help", ""})
+# Commands that mutate state / expose ops metrics — admin only.
+_AOWEN_SENSITIVE_SUBCOMMANDS = frozenset({"status", "monitor", "config", "reset"})
+
+
+def _extract_aowen_identity(event: Any) -> tuple[str, str]:
+    """Return (user_name, sender_open_id) from a gateway event/source."""
+    source = getattr(event, "source", None)
+    user_name = str(getattr(source, "user_name", "") or "")
+    sender_open_id = str(getattr(source, "sender_open_id", "") or getattr(source, "user_id", "") or "")
+    # Prefer raw feishu open_id when present
+    try:
+        raw = getattr(event, "raw_message", None)
+        raw_event = raw.get("event") if isinstance(raw, dict) else getattr(raw, "event", None)
+        if isinstance(raw_event, dict):
+            sender_open_id = (
+                raw_event.get("sender", {}).get("sender_id", {}).get("open_id", "") or sender_open_id
+            )
+        elif raw_event is not None:
+            sid = getattr(getattr(raw_event, "sender", None), "sender_id", None)
+            sender_open_id = str(getattr(sid, "open_id", "") or sender_open_id)
+    except Exception:
+        pass
+    return user_name, sender_open_id
+
+
+def _is_aowen_admin(user_name: str, sender_open_id: str) -> bool:
+    """Fail-closed admin check for /aowen sensitive commands."""
+    try:
+        from ..config.schema import Config
+        cfg = Config()
+        allow = cfg.aowen_admins
+    except Exception:
+        _logger.warning("HLS: aowen admin allowlist unavailable — denying sensitive command")
+        return False
+    # Hermes role injection pattern: admin:<name>
+    un = (user_name or "").strip()
+    if un.lower().startswith("admin:"):
+        return True
+    if un and un in allow:
+        return True
+    if sender_open_id and sender_open_id in allow:
+        return True
+    return False
+
+
+def _deny_card(reason: str) -> dict:
+    return {
+        "schema": "2.0",
+        "config": {"update_multi": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "权限不足"},
+            "template": "red",
+        },
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": reason,
+                }
+            ]
+        },
+    }
+
+
 # Pitfall: Feishu API calls run in real OS threads; concurrent increments
 _metrics_lock = threading.Lock()
 
@@ -628,7 +694,33 @@ def handle_pre_gateway_dispatch(event: Any, gateway: Any = None, **kwargs) -> di
         subcommand = parts[1].strip().lower() if len(parts) > 1 else "help"
         sub_arg = parts[2].strip().lower() if len(parts) > 2 else ""
 
-        _logger.info("HLS: /aowen %s %s command detected, chat=%s", subcommand, sub_arg, chat_id[:12])
+        user_name, sender_open_id = _extract_aowen_identity(event)
+        _logger.info(
+            "HLS: /aowen %s %s command detected, chat=%s user=%s",
+            subcommand, sub_arg, chat_id[:12], user_name or "?",
+        )
+
+        _auth_on = True
+        try:
+            from ..config.schema import Config
+            _auth_on = bool(Config().aowen_auth_enabled)
+        except Exception:
+            _auth_on = True
+        if (
+            _auth_on
+            and subcommand not in _AOWEN_PUBLIC_SUBCOMMANDS
+            and not _is_aowen_admin(user_name, sender_open_id)
+        ):
+            _logger.warning(
+                "HLS: /aowen %s denied for user=%s open_id=%s chat=%s",
+                subcommand, user_name or "?", (sender_open_id or "?")[:8], chat_id[:12],
+            )
+            _send_card_async(
+                chat_id,
+                _deny_card("`/aowen %s` 需要管理员权限。请联系管理员配置 `lark_hls_v2.aowen_admins` 或 `HLS_AOWEN_ADMINS`。" % (subcommand or "help",)),
+                "aowen_denied",
+            )
+            return _skip(f"/aowen {subcommand} denied non-admin")
 
         if subcommand == "help" or subcommand == "":
             _send_card_async(chat_id, build_help_card(), "help")

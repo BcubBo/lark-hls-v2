@@ -348,6 +348,62 @@ class Config:
     def env_app_secret(self) -> str:
         return os.environ.get("FEISHU_APP_SECRET") or os.environ.get("LARK_APP_SECRET") or ""
 
+    # -- Security / identity -------------------------------------------------
+
+    @property
+    def aowen_auth_enabled(self) -> bool:
+        """Feature flag for /aowen admin gate. False = legacy open access."""
+        val = self._plugin_sec().get("aowen_auth_enabled", defaults.AOWEN_AUTH_ENABLED)
+        return _to_bool(val, default=bool(defaults.AOWEN_AUTH_ENABLED))
+
+    @property
+    def aowen_admins(self) -> list[str]:
+        """Admin allowlist for /aowen sensitive commands.
+
+        Sources (union): env HLS_AOWEN_ADMINS / LARK_HLS_AOWEN_ADMINS,
+        config lark_hls_v2.aowen_admins, defaults.AOWEN_ADMINS.
+        """
+        raw: list[str] = []
+        for envk in ("HLS_AOWEN_ADMINS", "LARK_HLS_AOWEN_ADMINS"):
+            envv = os.environ.get(envk, "")
+            if envv:
+                raw.extend([x.strip() for x in envv.split(",") if x.strip()])
+        cfgv = self._plugin_sec().get("aowen_admins", defaults.AOWEN_ADMINS)
+        if isinstance(cfgv, str):
+            raw.extend([x.strip() for x in cfgv.split(",") if x.strip()])
+        elif isinstance(cfgv, (list, tuple)):
+            raw.extend([str(x).strip() for x in cfgv if str(x).strip()])
+        else:
+            raw.extend([str(x).strip() for x in defaults.AOWEN_ADMINS if str(x).strip()])
+        # de-dup preserve order
+        out, seen = [], set()
+        for x in raw:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+
+    @property
+    def users_db_path(self) -> str:
+        """Path for feishu identity SQLite cache (outside plugin dir)."""
+        cfgv = str(self._plugin_sec().get("users_db_path", defaults.USERS_DB_PATH) or "")
+        if cfgv:
+            return cfgv
+        envv = os.environ.get("LARK_HLS_USERS_DB", "")
+        if envv:
+            return envv
+        hermes = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
+        # profile data dir: HERMES_HOME/profiles/<profile>/data when possible
+        profile = os.environ.get("HERMES_PROFILE") or os.environ.get("HERMES_ACTIVE_PROFILE") or ""
+        candidates = []
+        if profile:
+            candidates.append(hermes / "profiles" / profile / "data" / "lark_hls_v2_users.db")
+        candidates.append(hermes / "data" / "lark_hls_v2_users.db")
+        for c in candidates:
+            if c.parent.exists():
+                return str(c)
+        return str(candidates[0])
+
     # -- Internal helpers ----------------------------------------------------
 
     def _plugin_sec(self) -> dict[str, Any]:

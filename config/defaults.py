@@ -127,6 +127,19 @@ FEISHU_BASE_URL: str = "https://open.feishu.cn/open-apis"
 RELOAD_CACHE_TTL: float = 60.0
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# /aowen management command admins
+# ---------------------------------------------------------------------------
+# Empty = deny sensitive commands for everyone (fail-closed) unless
+# caller user_name starts with "admin:" (Hermes role injection).
+# Comma-separated user_name / sender_open_id values.
+AOWEN_AUTH_ENABLED: bool = True
+AOWEN_ADMINS: list[str] = []
+
+# Runtime SQLite path for feishu identity cache (NOT inside the plugin tree).
+# Empty = HERMES_HOME/profiles/<profile>/data/lark_hls_v2_users.db
+USERS_DB_PATH: str = ""
+
 # Cron card 改进常量
 # ---------------------------------------------------------------------------
 # 内容折叠阈值（字符数），超过此值自动折叠到 collapsible_panel

@@ -299,17 +299,25 @@ def _wrap_run_agent(orig: Callable) -> Callable:
                 # BUG FIX (v0.15.4): We must keep a reference to the original
                 _original_msg_context_ref = ctx.get("_original_msg_context_ref") or ctx
                 _saved_parent_ctx = dict(ctx)  # Save a copy for restoration after orig()
+                parent_for_identity = _original_msg_context_ref or ctx
                 ctx = {
                     "message_id": event_message_id,
-                    "chat_id": ctx.get("chat_id", ""),
-                    "anchor_id": ctx.get("anchor_id"),
+                    "chat_id": parent_for_identity.get("chat_id", "") or ctx.get("chat_id", ""),
+                    "anchor_id": parent_for_identity.get("anchor_id") or ctx.get("anchor_id"),
                     "event_message_id": event_message_id,
                     "card_sent": False,
                     "_msg_start_time": time.monotonic(),
                     "_agent_ref": None,
                     "_interrupt_depth": _interrupt_depth,
-                    "_parent_message_id": ctx.get("message_id"),  # Track parent for cleanup
+                    "_parent_message_id": parent_for_identity.get("message_id"),  # Track parent for cleanup
                     "_original_msg_context_ref": _original_msg_context_ref,  # Propagate ref to original
+                    # mem0x/authz identity MUST survive interrupt child contexts
+                    "user_id": parent_for_identity.get("user_id", ""),
+                    "user_name": parent_for_identity.get("user_name", ""),
+                    "sender_open_id": parent_for_identity.get("sender_open_id", ""),
+                    "chat_type": parent_for_identity.get("chat_type", "dm") or "dm",
+                    "platform": parent_for_identity.get("platform", ""),
+                    "session_id": parent_for_identity.get("session_id", ""),
                 }
                 _msg_ctx.set(ctx)
                 _thread_local_ctx.data = dict(ctx)
@@ -593,8 +601,31 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
             return await orig(self, prompt, source, task_id, **kwargs)
 
         chat_id = getattr(source, "chat_id", "")
+        _platform = getattr(source, "platform", None)
+        _user_id = getattr(source, "user_id", "") or ""
+        _user_name = getattr(source, "user_name", "") or ""
+        _sender_open_id = getattr(source, "sender_open_id", "") or _user_id
+        try:
+            _raw = getattr(source, "raw_message", None) or getattr(source, "raw", None)
+            if _raw is None and hasattr(source, "event"):
+                _raw = getattr(source, "event", None)
+            _raw_event = None
+            if isinstance(_raw, dict):
+                _raw_event = _raw.get("event")
+            elif _raw is not None:
+                _raw_event = getattr(_raw, "event", _raw)
+            if isinstance(_raw_event, dict):
+                _sender_open_id = (
+                    _raw_event.get("sender", {}).get("sender_id", {}).get("open_id", "") or _sender_open_id
+                )
+            elif _raw_event is not None:
+                sid = getattr(getattr(_raw_event, "sender", None), "sender_id", None)
+                _sender_open_id = str(getattr(sid, "open_id", "") or _sender_open_id)
+        except Exception:
+            pass
 
         # Set up message context so _maybe_wrap_callbacks works
+        # Identity fields are required by mem0x/OPA — do not drop them on bg tasks.
         _msg_ctx.set({
             "message_id": task_id,
             "chat_id": chat_id,
@@ -603,6 +634,12 @@ def _wrap_run_background_task(orig: Callable) -> Callable:
             "card_sent": False,
             "_msg_start_time": time.monotonic(),
             "_agent_ref": None,  # Will be filled by _maybe_wrap_callbacks
+            "user_id": _user_id,
+            "user_name": _user_name,
+            "sender_open_id": _sender_open_id,
+            "chat_type": getattr(source, "chat_type", "dm") or "dm",
+            "platform": _platform.value if _platform else "",
+            "session_id": "",
         })
         _thread_local_ctx.data = dict(_msg_ctx.get())
 

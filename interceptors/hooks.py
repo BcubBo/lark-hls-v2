@@ -512,11 +512,23 @@ def _sync_group_members(chat_id: str) -> None:
         return
 
     # 获取群成员
-    url = f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}/members?member_id_type=open_id&page_size=100"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = _json.loads(resp.read()).get("data", {})
-    members = data.get("items", [])
+    members = []
+    page_token = ""
+    for _page in range(20):  # hard cap 20 pages * 100
+        url = (
+            f"https://open.feishu.cn/open-apis/im/v1/chats/{chat_id}/members"
+            f"?member_id_type=open_id&page_size=100"
+            + (f"&page_token={page_token}" if page_token else "")
+        )
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read()).get("data", {})
+        members.extend(data.get("items") or [])
+        if not data.get("has_more"):
+            break
+        page_token = data.get("page_token") or ""
+        if not page_token:
+            break
 
     if not members:
         return

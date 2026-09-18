@@ -80,6 +80,49 @@ except ImportError:
 
 _logger = logging.getLogger("lark_hls_v2")
 
+
+_BLOCKED_HOST_SUFFIXES = (
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+)
+
+
+def _is_safe_image_url(url: str) -> bool:
+    """Basic SSRF guard for remote image download."""
+    try:
+        from urllib.parse import urlparse
+        u = urlparse(url or "")
+        if u.scheme not in ("http", "https"):
+            return False
+        host = (u.hostname or "").lower().strip(".")
+        if not host:
+            return False
+        if host in _BLOCKED_HOST_SUFFIXES:
+            return False
+        if host.endswith(".localhost") or host.endswith(".local"):
+            return False
+        # reject obvious private/link-local literals
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(host)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                return False
+        except ValueError:
+            pass  # hostname, not IP
+        return True
+    except Exception:
+        return False
+
+
 def _sanitize_message(msg: str) -> str:
     """_sanitize_message(): 从错误消息中移除 token 和 secret，防止日志泄露凭证."""
     msg = re.sub(r'(tenant_access_token["\s:=]+)([A-Za-z0-9_-]{10,})', r"\1***", msg)
@@ -654,14 +697,25 @@ class FeishuClient:
             return None
 
     @staticmethod
-    def _download_image(url: str, timeout: int = 15) -> bytes | None:
-        """同步下载图片（在线程池中运行）."""
+    def _download_image(url: str, timeout: int = 15, max_bytes: int = 8 * 1024 * 1024) -> bytes | None:
+        """同步下载图片（在线程池中运行）. SSRF/size guarded."""
+        if not _is_safe_image_url(url):
+            _logger.warning("image download blocked by url guard: %s", url)
+            return None
         try:
-            req = Request(url, headers={"User-Agent": "lark-hls-v2/1.0"})
+            req = Request(url, headers={"User-Agent": "lark-hls-v2/2.0"})
             with urlopen(req, timeout=timeout) as resp:
                 if resp.status != 200:
                     return None
-                return bytes(resp.read())
+                cl = resp.headers.get("Content-Length") if getattr(resp, "headers", None) else None
+                if cl and cl.isdigit() and int(cl) > max_bytes:
+                    _logger.warning("image download too large: %s", url)
+                    return None
+                data = resp.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    _logger.warning("image download exceeded cap: %s", url)
+                    return None
+                return data
         except (URLError, OSError):
             _logger.debug("image download failed: %s", url)
             return None
