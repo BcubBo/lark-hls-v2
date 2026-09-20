@@ -105,6 +105,7 @@ class CardSession:
         "_answer_streamed",
         "_state_lock",
         "_completion_dispatched",
+        "_footer_patched",
     )
 
     def __init__(
