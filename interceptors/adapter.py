@@ -130,16 +130,36 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                 from ..controller import get_controller
                 _ctrl = get_controller()
                 if _ctrl and _ctrl.enabled:
+                    now = __import__("time").time()
                     for _, _sess in _ctrl._sess_items_snapshot():
-                        if (
-                            _sess.chat_id == chat_id
-                            and _sess.card_msg_id
-                            and _sess.state != "aborted"
-                        ):
+                        if _sess.chat_id != chat_id or not _sess.card_msg_id:
+                            continue
+                        if _sess.state == "aborted":
+                            continue
+                        # Long-session race: seal/fallback may finish after
+                        # _msg_ctx is cleared. Keep suppressing gateway static
+                        # cards while the streaming card is live OR shortly
+                        # after seal — otherwise result card + static card
+                        # both show data and footer looks wrong.
+                        age = now - getattr(_sess, "created_at", now)
+                        if _sess.is_terminal_phase and age > 180:
+                            continue
+                        # Streaming card still open — always suppress text/static
+                        if not _sess._streaming_closed and _sess.card_id:
                             _logger.info(
-                                "gateway_send: _msg_ctx=None but active card session found "
-                                "(msg=%s state=%s), suppressing text reply",
-                                (_sess.message_id or "?")[:12], _sess.state,
+                                "gateway_send: live card session (msg=%s state=%s age=%.0fs), suppressing static/text",
+                                (_sess.message_id or "?")[:12], _sess.state, age,
+                            )
+                            try:
+                                from gateway.platforms.base import SendResult
+                                return SendResult(success=True)
+                            except Exception:
+                                return None
+                        if _sess.is_terminal_phase and age <= 180:
+                            _logger.info(
+                                "gateway_send: _msg_ctx=None but card session found "
+                                "(msg=%s state=%s age=%.0fs), suppressing text reply",
+                                (_sess.message_id or "?")[:12], _sess.state, age,
                             )
                             try:
                                 from gateway.platforms.base import SendResult

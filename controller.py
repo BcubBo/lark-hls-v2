@@ -321,29 +321,204 @@ class StreamCardController(UnifiedControllerMixin):
         if session.text is not None:
             session.text = TextState()
         session.tool_use = ToolUseTracker()
-        session.footer = {}
+        # Keep session.footer — long-session completion often arrives AFTER prune
+        # started seal; clearing footer here guarantees a missing seal footer.
+
+    def _build_completion_footer(
+        self,
+        session: CardSession | None,
+        *,
+        duration: float = 0.0,
+        model: str = "",
+        tokens: dict | None = None,
+        context: dict | None = None,
+        api_calls: int = 0,
+        history_offset: int = 0,
+        compression_exhausted: bool = False,
+        reasoning_tokens: int = 0,
+        estimated_cost_usd: float = 0.0,
+        cost_status: str = "unknown",
+    ) -> dict:
+        footer: dict[str, Any] = {}
+        try:
+            if duration and duration > 0:
+                footer["duration"] = duration
+            elif session is not None and session.created_at:
+                footer["duration"] = max(0.0, time.time() - session.created_at)
+        except Exception:
+            pass
+        if model:
+            footer["model"] = model
+        if tokens:
+            footer.update({
+                k: v for k, v in {
+                    "input_tokens": tokens.get("input_tokens"),
+                    "output_tokens": tokens.get("output_tokens"),
+                    "cache_read_tokens": tokens.get("cache_read_tokens"),
+                    "cache_write_tokens": tokens.get("cache_write_tokens"),
+                    "reasoning_tokens": reasoning_tokens,
+                }.items() if v
+            })
+        if context:
+            footer.update({
+                k: v for k, v in {
+                    "context_used": context.get("used_tokens"),
+                    "context_max": context.get("max_tokens"),
+                }.items() if v
+            })
+        if api_calls:
+            footer["api_calls"] = api_calls
+        if history_offset:
+            footer["history_offset"] = history_offset
+        if compression_exhausted:
+            footer["compression_exhausted"] = compression_exhausted
+        if estimated_cost_usd:
+            footer["estimated_cost_usd"] = estimated_cost_usd
+        if cost_status and cost_status != "unknown":
+            footer["cost_status"] = cost_status
+        return footer
+
+    def _apply_completion_footer(self, session: CardSession, footer: dict) -> None:
+        """Merge footer metadata even if seal already started (long-session race)."""
+        if not footer:
+            return
+        current = dict(session.footer or {})
+        # Prefer non-empty real values over prune placeholders
+        for k, v in footer.items():
+            if v in (None, "", 0, 0.0):
+                continue
+            if k == "duration" and current.get("duration") and footer.get("duration"):
+                # Keep the longer/real duration if prune already wrote one
+                try:
+                    if float(current.get("duration") or 0) >= float(v):
+                        continue
+                except Exception:
+                    pass
+            current[k] = v
+        # Drop prune-only placeholder once real completion data arrives
+        if current.get("seal_reason") == "ttl_idle" and any(
+            current.get(k) for k in ("model", "input_tokens", "output_tokens", "api_calls")
+        ):
+            current.pop("seal_reason", None)
+        session.footer = current
+
+    async def _late_footer_patch(self, session: CardSession) -> None:
+        """If seal ran with empty footer, append footer elements after the fact."""
+        if not session.card_id or not self._client:
+            return
+        if getattr(session, "_footer_patched", False):
+            return
+        if session._streaming_closed is False:
+            return  # normal seal path will handle it
+        try:
+            from .card.elements import build_seal_actions
+            footer_data = dict(session.footer or {})
+            if not footer_data:
+                return
+            actions = build_seal_actions(
+                footer_data=footer_data,
+                is_error=bool(session.error_message) and not session._was_aborted,
+                is_aborted=session._was_aborted,
+                error_message="",
+                footer_fields=self._cfg.footer_fields,
+                footer_show_label=self._cfg.footer_show_label,
+                existing_elements=session.existing_elements or None,
+                footer_before_panel=True,
+            )
+            # Only keep add_elements footer inserts — no deletes/re-errors
+            footer_actions = [
+                a for a in actions
+                if a.get("action") == "add_elements"
+            ]
+            if not footer_actions:
+                return
+            await self._client.cardkit_batch_update(
+                session.card_id, footer_actions, sequence=session.sequence,
+            )
+            session._footer_patched = True
+            _logger.info(
+                "late footer patch ok: card=%s msg=%s keys=%s",
+                (session.card_id or "")[:12],
+                (session.message_id or "?")[:12],
+                sorted(footer_data.keys()),
+            )
+        except Exception:
+            _logger.warning(
+                "late footer patch failed: card=%s msg=%s",
+                (session.card_id or "")[:12],
+                (session.message_id or "?")[:12],
+                exc_info=True,
+            )
 
     def _prune_stale_sessions(self) -> None:
+        """TTL prune. Long agent sessions must still get a sealed card + footer.
+
+        Historical bug: age > 2*TTL force-TERMINATED + _cleanup immediately.
+        Later on_completed then found no session / TERMINATED → skipped seal,
+        gateway static card also fired → result card + static card both show
+        data, seal footer missing.
+        """
+        # Always honor live config (card_ttl_sec), not just controller __init__
+        try:
+            self._session_ttl = self._cfg.card_duration_sec or self._session_ttl
+        except Exception:
+            pass
+        ttl = self._session_ttl or 600
         now = time.time()
         for mid, s in self._sess_items_snapshot():
             if mid is None:
                 continue
             age = now - s.created_at
-            if age <= self._session_ttl:
-                continue
             if s.is_terminal_phase:
-                self._cleanup(mid)
-            elif age > 2 * self._session_ttl:
-                _logger.warning(
-                    "prune: force-terminating stale non-terminal session "
-                    "state=%s age=%.0fs msg=%s",
-                    s.state, age, (mid or "?")[:12],
-                )
+                # Keep terminal sessions briefly so adapter suppression can
+                # still see card_msg_id after a long run; clean after 3x TTL.
+                if age > 3 * ttl:
+                    self._cleanup(mid)
+                continue
+            if age <= ttl:
+                continue
+            last_act = getattr(s.flush, "last_update_time", 0) or 0.0
+            idle = (now - last_act) if last_act else age
+            # Long agent sessions MUST NOT be sealed on age alone.
+            # Only seal when the card has been idle past TTL (no flush traffic).
+            # Historical bug: age > 2/3*TTL force-sealed a live stream → empty
+            # footer + gateway static card raced the result card.
+            if idle < ttl:
+                continue
+            if s.state in (STREAMING, COMPLETING, CREATING) and idle < 2 * ttl:
+                continue
+            if age <= 2 * ttl and idle < ttl:
+                continue
+
+            _logger.warning(
+                "prune: stale non-terminal session state=%s age=%.0fs idle=%.0fs "
+                "card=%s msg=%s — attempting seal instead of silent terminate",
+                s.state, age, idle,
+                (s.card_id or "")[:12] or "-",
+                (mid or "?")[:12],
+            )
+            if s.card_id and not s._completion_dispatched:
+                if not s.error_message:
+                    s.error_message = "Session idle past card TTL; sealing final card"
+                # Placeholder footer so seal still shows elapsed/status even if
+                # the real completion hook never arrives.
+                self._apply_completion_footer(s, self._build_completion_footer(
+                    s, duration=age,
+                ))
+                s.footer["seal_reason"] = "ttl_idle"
+                # STREAMING → COMPLETING is legal; CREATING may reject
                 s.set_state(
-                    TERMINATED, source="_prune_stale_sessions",
-                    reason=TerminalReason.UNAVAILABLE, terminal=True,
+                    COMPLETING, source="_prune_stale_sessions",
+                    reason=TerminalReason.ERROR,
                 )
-                self._cleanup(mid)
+                self._dispatch_completion(s)
+                continue
+            if s.set_state(
+                TERMINATED, source="_prune_stale_sessions",
+                reason=TerminalReason.UNAVAILABLE, terminal=True,
+            ):
+                # Delay cleanup — leave metadata for gateway suppression
+                pass
 
     # ── Public hook entry points ────────────────────────────────────
 
@@ -603,7 +778,46 @@ class StreamCardController(UnifiedControllerMixin):
             message_id = cont_id
 
         direct_session = self._sess_get(message_id)
+        # Always compute footer first — long-session prune may have sealed early
+        footer_payload = self._build_completion_footer(
+            direct_session,
+            duration=duration,
+            model=model,
+            tokens=tokens,
+            context=context,
+            api_calls=api_calls,
+            history_offset=history_offset,
+            compression_exhausted=compression_exhausted,
+            reasoning_tokens=reasoning_tokens,
+            estimated_cost_usd=estimated_cost_usd,
+            cost_status=cost_status,
+        )
         if direct_session is not None and direct_session.state in (COMPLETING, COMPLETED):
+            # Race: prune/TTL seal may already be in flight. Merge real footer
+            # metadata and try a late footer patch; do NOT drop the completion data.
+            if answer and direct_session.text is not None:
+                try:
+                    direct_session.text.on_deliver(answer)
+                except Exception:
+                    pass
+            if answer and direct_session.unified_state is not None:
+                try:
+                    clean_answer = strip_reasoning_tags(answer)
+                    if clean_answer and not direct_session.unified_state.answer_text:
+                        direct_session.unified_state.on_answer_delta(clean_answer)
+                        direct_session.unified_state.answer_dirty = True
+                except Exception:
+                    pass
+            if error_message:
+                direct_session.error_message = error_message
+            self._apply_completion_footer(direct_session, footer_payload)
+            if direct_session.state == COMPLETED and direct_session.card_id:
+                _loop = direct_session._loop or self._get_loop()
+                if _loop is not None:
+                    self._fire_and_forget(
+                        self._late_footer_patch(direct_session),
+                        _loop,
+                    )
             return True
 
         session = self._get_active_session(message_id)
@@ -613,6 +827,14 @@ class StreamCardController(UnifiedControllerMixin):
             if redirected_id is not None:
                 redir_session = self._sess_get(redirected_id)
                 if redir_session is not None and redir_session.state in (COMPLETING, COMPLETED):
+                    self._apply_completion_footer(redir_session, footer_payload)
+                    if redir_session.state == COMPLETED and redir_session.card_id:
+                        _loop = redir_session._loop or self._get_loop()
+                        if _loop is not None:
+                            self._fire_and_forget(
+                                self._late_footer_patch(redir_session),
+                                _loop,
+                            )
                     return True
                 session = self._get_active_session(redirected_id)
             if session is None:
@@ -620,8 +842,24 @@ class StreamCardController(UnifiedControllerMixin):
             message_id = redirected_id or message_id
 
         if session.state in (CREATION_FAILED, TERMINATED):
-            self._cleanup(message_id)
-            return False
+            # Long-session TTL / unavailable path: still try to seal a live card
+            # so footer + close_streaming run. TERMINATED→COMPLETING is illegal,
+            # so dispatch completion without forcing COMPLETING.
+            self._apply_completion_footer(session, footer_payload)
+            if session.card_id and not session._completion_dispatched:
+                _logger.info(
+                    "on_completed: late seal for terminal session state=%s card=%s msg=%s",
+                    session.state,
+                    (session.card_id or "")[:12],
+                    (message_id or "?")[:12],
+                )
+                if not session.error_message and session.state == TERMINATED:
+                    session.error_message = session.error_message or ""
+                self._dispatch_completion(session)
+                return True
+            if session.state == CREATION_FAILED or not session.card_id:
+                self._cleanup(message_id)
+                return False
 
         if answer:
             session.text.on_deliver(answer)
@@ -646,39 +884,7 @@ class StreamCardController(UnifiedControllerMixin):
         if aborted:
             session._was_aborted = True
 
-        session.footer = {
-            "duration": duration,
-            "model": model,
-            **({} if not tokens else {}),
-            **({} if not context else {}),
-        }
-        if tokens:
-            session.footer.update({
-                k: v for k, v in {
-                    "input_tokens": tokens.get("input_tokens"),
-                    "output_tokens": tokens.get("output_tokens"),
-                    "cache_read_tokens": tokens.get("cache_read_tokens"),
-                    "cache_write_tokens": tokens.get("cache_write_tokens"),
-                    "reasoning_tokens": reasoning_tokens,
-                }.items() if v
-            })
-        if context:
-            session.footer.update({
-                k: v for k, v in {
-                    "context_used": context.get("used_tokens"),
-                    "context_max": context.get("max_tokens"),
-                }.items() if v
-            })
-        if api_calls:
-            session.footer["api_calls"] = api_calls
-        if history_offset:
-            session.footer["history_offset"] = history_offset
-        if compression_exhausted:
-            session.footer["compression_exhausted"] = compression_exhausted
-        if estimated_cost_usd:
-            session.footer["estimated_cost_usd"] = estimated_cost_usd
-        if cost_status and cost_status != "unknown":
-            session.footer["cost_status"] = cost_status
+        self._apply_completion_footer(session, footer_payload)
 
         session.set_state(COMPLETING, source="on_completed")
         self._dispatch_completion(session)

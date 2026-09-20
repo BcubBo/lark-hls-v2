@@ -165,6 +165,7 @@ class CardSession:
         self._card_ready: asyncio.Event = asyncio.Event()
         self._is_continuation: bool = False
         self._continuation_reactivation_count: int = 0
+        self._footer_patched: bool = False
 
     def transition(self, to: str, source: str = "", reason: str = "") -> bool:
         """transition(): 契约

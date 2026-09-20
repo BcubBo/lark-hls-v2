@@ -46,6 +46,10 @@ from .md import (
     optimize_markdown_style,
 )
 
+import logging as _logging
+
+_logger = _logging.getLogger("lark_hls_v2")
+
 # ================================================================
 # ▍Config 驱动的颜色配置 — 面板边框和标题栏颜色
 # 导入时从 defaults 读取（零开销），config.yaml 有覆盖时才走 Config。
@@ -880,6 +884,34 @@ def build_colored_divider(*, color: str = "grey") -> dict:
 # 插入 error panel + footer → 删除 loading_hint + loading_icon。
 # existing_elements 过滤已删除的元素，避免重复删除报错。
 # ================================================================
+def _pick_seal_insert_target(
+    existing_elements: set[str] | None,
+    *,
+    prefer_panel: bool = False,
+) -> tuple[str, str] | None:
+    """Choose a live insert anchor for seal footer/error panels.
+
+    Long sessions often delete loading_icon early; panel may also be absent.
+    insert_before a missing element_id makes the whole batch_update fail (300313),
+    which is why seal footer never appears. Prefer panel → loading → answer(after).
+    """
+    ids = existing_elements
+    if ids is None:
+        # Unknown layout: keep legacy preference
+        if prefer_panel:
+            return UNIFIED_PANEL_ELEMENT_ID, "insert_before"
+        return _LOADING_ELEMENT_ID, "insert_before"
+    if prefer_panel and UNIFIED_PANEL_ELEMENT_ID in ids:
+        return UNIFIED_PANEL_ELEMENT_ID, "insert_before"
+    if _LOADING_ELEMENT_ID in ids:
+        return _LOADING_ELEMENT_ID, "insert_before"
+    if UNIFIED_PANEL_ELEMENT_ID in ids:
+        return UNIFIED_PANEL_ELEMENT_ID, "insert_before"
+    if ANSWER_ELEMENT_ID in ids:
+        return ANSWER_ELEMENT_ID, "insert_after"
+    return None
+
+
 def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None, is_error: bool = False, is_aborted: bool = False, error_message: str = "", footer_fields: list[list[str]] | None = None, footer_show_label: bool = False, existing_elements: set[str] | None = None, card_trace_id: str = "", footer_before_panel: bool = False) -> list[dict]:
     """构建保留式封卡 batch_update actions. Inserts error panel + footer via insert_before
     loading_icon, then deletes loading_hint + loading_icon. existing_elements filters deletes."""
@@ -889,34 +921,52 @@ def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None
     def _elem_exists(eid: str) -> bool:
         return existing_elements is None or eid in existing_elements
 
-    # Error/interrupt panel.
-    if error_message:
+    def _add_insert(elements: list[dict], *, prefer_panel: bool) -> None:
+        if not elements:
+            return
+        picked = _pick_seal_insert_target(existing_elements, prefer_panel=prefer_panel)
+        if picked is None:
+            # Long sessions may drop loading/panel ids. CardKit add_elements
+            # without target_element_id appends to the card body — better than
+            # skipping footer entirely (seal footer never appears).
+            _logger.warning(
+                "build_seal_actions: no insert target in existing_elements=%s; append footer/error elements",
+                sorted(existing_elements) if existing_elements else None,
+            )
+            actions.append({
+                "action": "add_elements",
+                "params": {
+                    "elements": elements,
+                },
+            })
+            return
+        target_id, insert_type = picked
         actions.append({
             "action": "add_elements",
             "params": {
-                "type": "insert_before",
-                "target_element_id": _LOADING_ELEMENT_ID,
-                "elements": [_build_error_panel(
-                    error_message, is_aborted=is_aborted, expanded=True,
-                    card_trace_id=card_trace_id,
-                )],
+                "type": insert_type,
+                "target_element_id": target_id,
+                "elements": elements,
             },
         })
+
+    # Error/interrupt panel.
+    if error_message:
+        _add_insert(
+            [_build_error_panel(
+                error_message, is_aborted=is_aborted, expanded=True,
+                card_trace_id=card_trace_id,
+            )],
+            prefer_panel=False,
+        )
 
     # Background review panel.
     bg_review_messages = footer_data.get("bg_review_messages") if footer_data else None
     if bg_review_messages:
-        actions.append({
-            "action": "add_elements",
-            "params": {
-                "type": "insert_before",
-                "target_element_id": _LOADING_ELEMENT_ID,
-                "elements": [_build_background_review_panel(
-                    bg_review_messages,
-                    expanded=True,
-                )],
-            },
-        })
+        _add_insert(
+            [_build_background_review_panel(bg_review_messages, expanded=True)],
+            prefer_panel=False,
+        )
 
     # Partial indicator or footer.
     if partial:
@@ -929,14 +979,7 @@ def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None
                 "i18n_content": _i18n(f"▸ {en_text} ↩", f"▸ {zh_text} ↩"),
             },
         ]
-        actions.append({
-            "action": "add_elements",
-            "params": {
-                "type": "insert_before",
-                "target_element_id": UNIFIED_PANEL_ELEMENT_ID if footer_before_panel else _LOADING_ELEMENT_ID,
-                "elements": partial_elements,
-            },
-        })
+        _add_insert(partial_elements, prefer_panel=footer_before_panel)
     else:
         footer_elements = _build_footer_elements(
             footer_data,
@@ -945,15 +988,7 @@ def build_seal_actions(*, partial: bool = False, footer_data: dict | None = None
             fields=footer_fields,
             show_label=footer_show_label,
         )
-        if footer_elements:
-            actions.append({
-                "action": "add_elements",
-                "params": {
-                    "type": "insert_before",
-                    "target_element_id": UNIFIED_PANEL_ELEMENT_ID if footer_before_panel else _LOADING_ELEMENT_ID,
-                    "elements": footer_elements,
-                },
-            })
+        _add_insert(footer_elements, prefer_panel=footer_before_panel)
 
     # Delete loading hint (may remain if sealed before answer arrived).
     if _elem_exists(_LOADING_HINT_ELEMENT_ID):

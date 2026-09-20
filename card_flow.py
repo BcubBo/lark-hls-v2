@@ -1467,9 +1467,18 @@ class UnifiedControllerMixin:
 
         # ── Step 4: Finalize state ──
         # ── Build footer data ──
-        footer_data = session.footer
+        footer_data = dict(session.footer or {})
         if state:
-            footer_data = state.finalize(footer_data)
+            footer_data = state.finalize(footer_data) or footer_data
+        # Long-session prune can seal with almost-empty footer; always show elapsed/status.
+        if not footer_data.get("duration"):
+            try:
+                import time as _time
+                footer_data["duration"] = max(
+                    0.0, _time.time() - (session.created_at or _time.time())
+                )
+            except Exception:
+                pass
 
         is_aborted = getattr(session, "_was_aborted", False) or session.state == ABORTED
         error_message = getattr(session, "error_message", "")
