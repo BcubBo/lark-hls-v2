@@ -35,7 +35,23 @@ WSL 树（开发+本机生效） ──rsync/ssh──► Prod 树 ──restart
 
 ---
 
-## 3. WSL → Prod 同步
+## 3. Git 远程（2026-10-03 起）
+
+| 远程 | 地址 | 用途 |
+|------|------|------|
+| **gitea (origin)** | `ssh://git@100.89.101.63:2222/bcubbo/lark-hls-v2.git` | **真源**。日常 `git push gitea main` |
+| **github** | `https://github.com/BcubBo/lark-hls-v2` | **仅稳定版**。`scripts/publish-stable.sh` 把 `stable` 强推为 `main` |
+
+发布稳定版：
+
+```bash
+git branch -f stable main && git push gitea stable
+bash scripts/publish-stable.sh
+```
+
+Gitea Web: http://100.89.101.63:3100/bcubbo/lark-hls-v2
+
+## 3b. WSL → Prod 同步
 
 ```bash
 # 以 ubuntu 用户在 WSL 执行
