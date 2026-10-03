@@ -245,6 +245,10 @@ class StreamCardController(UnifiedControllerMixin):
             return None
         if stale._is_continuation:
             return None
+        # Phase-2 anti-split: prefer appending to the sealed card over a new card.
+        # Return the SAME id so on_answer keeps accumulating into the original session.
+        if stale.card_id and stale.unified_state is not None:
+            return message_id
         if stale._continuation_reactivation_count >= 1:
             return None
 
@@ -573,12 +577,12 @@ class StreamCardController(UnifiedControllerMixin):
 
         self._fire_and_forget(self._do_create_linear_card(session), loop)
 
-    def on_thinking(self, *, message_id: str, text: str) -> None:
+    def on_thinking(self, *, message_id: str, text: str) -> bool:
         if not self.enabled:
-            return
+            return False
         session = self._get_active_session(message_id)
         if session is None or session.guard.should_skip("on_thinking"):
-            return
+            return False
 
         from .card.elements import _LOADING_HINT_ELEMENT_ID
 
@@ -592,37 +596,39 @@ class StreamCardController(UnifiedControllerMixin):
                 pass
 
         self._linear_on_thinking(session, text)
+        return True
 
-    def on_reasoning(self, *, message_id: str, text: str) -> None:
+    def on_reasoning(self, *, message_id: str, text: str) -> bool:
         if not self.enabled:
-            return
+            return False
         if not self._cfg.show_reasoning:
-            return
+            return False
         session = self._get_active_session(message_id)
         if session is None or session.guard.should_skip("on_reasoning"):
-            return
+            return False
 
         epoch = session.create_epoch
         if session.is_stale_create(epoch):
-            return
+            return False
 
         if session.unified_state is None:
-            return
+            return False
         session.unified_state.on_reasoning_delta(text)
         self._schedule_linear_flush(session)
+        return True
 
     def on_tool_update(
         self, *, message_id: str, tool_name: str, status: str, detail: str = "",
-    ) -> None:
+    ) -> bool:
         if not self.enabled:
-            return
+            return False
         session = self._get_active_session(message_id)
         if session is None or session.guard.should_skip("on_tool_update"):
-            return
+            return False
 
         epoch = session.create_epoch
         if session.is_stale_create(epoch):
-            return
+            return False
 
         if status in ("running", "started", "tool.started"):
             session.tool_use.record_start(tool_name, detail)
@@ -635,14 +641,19 @@ class StreamCardController(UnifiedControllerMixin):
             )
 
         if session.unified_state is None:
-            return
+            return False
         is_new_tool = status in ("running", "started", "tool.started")
         session.unified_state.on_tool_event(is_new_tool=is_new_tool)
         self._schedule_linear_flush(session)
+        return True
 
-    def on_answer(self, *, message_id: str, text: str) -> None:
+    def on_answer(self, *, message_id: str, text: str) -> bool:
+        """Answer delta 入账。返回 True 表示内容已被卡片状态吸收。
+
+        返回 False 时调用方（callbacks）必须继续走原始回调，否则消息被吞没。
+        """
         if not self.enabled:
-            return
+            return False
 
         if text:
             new_id = self._maybe_reactivate_for_continuation(message_id)
@@ -650,22 +661,113 @@ class StreamCardController(UnifiedControllerMixin):
                 message_id = new_id
 
         session = self._get_active_session(message_id)
+        if session is None:
+            # Phase-2: streaming-closed but non-terminal sessions must still
+            # receive answer tokens (append to sealed card, no new card).
+            _any = self._sess_get(message_id)
+            if _any is not None and not _any.is_terminal_phase:
+                session = _any
         if session is None or session.guard.should_skip("on_answer"):
-            return
+            return False
 
         epoch = session.create_epoch
         if session.is_stale_create(epoch):
-            return
+            return False
 
         if session._first_answer_time == 0.0:
             session._first_answer_time = time.monotonic()
 
-        answer_text = strip_reasoning_tags(text)
+        # 流式 delta：只剥推理标签。Reasoning: 整段清空规则会吞掉同 chunk 的答案尾。
+        from .state.text import strip_thinking_tags_only
+        answer_text = strip_thinking_tags_only(text)
         if answer_text:
             if session.unified_state is None:
-                return
+                return False
             session.unified_state.on_answer_delta(answer_text)
-            self._schedule_linear_flush(session)
+            if session._streaming_closed and session.card_id:
+                # Sealed card: flush via partial_update (anti-split continuation)
+                _loop = session._loop or self._get_loop()
+                if _loop is not None:
+                    self._fire_and_forget(self._flush_sealed_answer(session), _loop)
+            else:
+                self._schedule_linear_flush(session)
+            return True
+        # 空文本 / 纯推理标签：未入账答案
+        return False
+
+    async def _flush_sealed_answer(self, session) -> None:
+        """把后续答案写回已封卡（partial_update），避免另开一张流卡。"""
+        if not session.card_id or session.unified_state is None:
+            return
+        state = session.unified_state
+        if not state.answer_dirty and not state.answer_text:
+            return
+        try:
+            from .card_flow import _cached_markdown_pipeline, _fallback_write_answer
+            from .card.md import optimize_markdown_style, escape_markdown_asterisks, _downgrade_tables
+            content = escape_markdown_asterisks(
+                _downgrade_tables(optimize_markdown_style(state.answer_text or ""))
+            ) or state.answer_text or " "
+            content = _cached_markdown_pipeline(content)
+            session.sequence += 1
+            ok = await _fallback_write_answer(
+                self._client, session.card_id, content,
+                sequence=session.sequence,
+            )
+            if ok:
+                state.answer_dirty = False
+        except Exception:
+            _logger.warning(
+                "sealed answer flush failed: msg=%s",
+                (session.message_id or "?")[:12],
+                exc_info=True,
+            )
+
+    def _deliver_orphan_answer(
+        self, message_id: str, answer: str, footer_payload: dict,
+        *, error_message: str = "",
+    ) -> bool:
+        """无 session 的完成事件：建一张结果卡并立刻封卡，避免落到静态文本。"""
+        try:
+            from .state.text import strip_reasoning_tags
+            content = strip_reasoning_tags(answer) or answer
+            if not content.strip():
+                return False
+            loop = self._get_loop()
+            if loop is None:
+                return False
+
+            async def _run() -> None:
+                await self._ensure_init()
+                assert self._client is not None
+                from .card.special import build_gateway_card
+                try:
+                    card = build_gateway_card(content, category="session")
+                except Exception:
+                    from .card import build_cron_card
+                    card = build_cron_card(content, status="success")
+                card_id = await self._client.cardkit_create(card)
+                # 无 reply anchor 时投到会话不可行；gateway 文本路径会带 chat。
+                # 退化：尝试以 message_id 为 reply 目标；失败则记录并放弃。
+                try:
+                    await self._client.reply_card_by_id(message_id, card_id)
+                except Exception:
+                    _logger.warning(
+                        "orphan answer card reply failed msg=%s",
+                        (message_id or "?")[:12],
+                        exc_info=True,
+                    )
+                    return
+                _logger.info(
+                    "orphan answer delivered as result card: msg=%s len=%d",
+                    (message_id or "?")[:12], len(content),
+                )
+
+            self._fire_and_forget(_run(), loop)
+            return True
+        except Exception:
+            _logger.warning("orphan answer deliver failed", exc_info=True)
+            return False
 
     def on_aborted(self, *, message_id: str) -> None:
         if not self.enabled:
@@ -838,6 +940,14 @@ class StreamCardController(UnifiedControllerMixin):
                     return True
                 session = self._get_active_session(redirected_id)
             if session is None:
+                # Phase-2: external-task / late return with a real answer but no
+                # live session — deliver a sealed result card instead of letting
+                # the adapter turn it into a static text card.
+                if answer:
+                    return self._deliver_orphan_answer(
+                        message_id, answer, footer_payload,
+                        error_message=error_message,
+                    )
                 return False
             message_id = redirected_id or message_id
 

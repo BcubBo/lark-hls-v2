@@ -97,7 +97,7 @@ class UnifiedLinearState:
 
     def on_reasoning_delta(self, text: str) -> None:
         """on_reasoning_delta(): 契约
-        入参：text（推理 token 文本片段）
+        入参：text（推理 token 文本片段，可能是真增量，也可能是累计全文）
         返回：无
         副作用：累加 _current_reasoning，设 panel_dirty / panel_visible
         谁调用：controller.on_reasoning()
@@ -109,19 +109,19 @@ class UnifiedLinearState:
             len(self._current_reasoning),
             len(self.reasoning_rounds),
         )
-        # v1.3.0 bug fix: 全前缀比较去重。
-        # 之前的实现只比较前几个字符，导致 post-stream 重复文本漏过。
-        if (
-            self._current_reasoning
-            and len(text) >= len(self._current_reasoning)
-            and text[:len(self._current_reasoning)] == self._current_reasoning
-        ):
-            _logger.debug(
-                "HLS: on_reasoning_delta skips post-stream duplicate "
-                "text_len=%d current_len=%d",
-                len(text), len(self._current_reasoning),
-            )
-            return
+        # v1.3.0: 全前缀比较去重。
+        # v2.0.9.2: 累计全文投递时前缀匹配只跳过已展示部分并追加新尾；
+        # 整段 return 会把推理尾部静默吞掉。
+        if self._current_reasoning and text:
+            cur = self._current_reasoning
+            if text == cur:
+                return
+            if len(text) > len(cur) and text[:len(cur)] == cur:
+                _new_part = text[len(cur):]
+                self._current_reasoning += _new_part
+                self.panel_dirty = True
+                self.panel_visible = True
+                return
         if not self._current_reasoning:
             # First token of a new reasoning round
             self._reasoning_start = time.time()

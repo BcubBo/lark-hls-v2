@@ -320,6 +320,13 @@ class Config:
         return defaults.SHOW_REASONING
 
     @property
+    def content_density(self) -> str:
+        """Card markdown density: normal | compact | ultra."""
+        val = self._plugin_sec().get("content_density", defaults.CONTENT_DENSITY)
+        val = str(val or defaults.CONTENT_DENSITY).strip().lower()
+        return val if val in ("normal", "compact", "ultra") else defaults.CONTENT_DENSITY
+
+    @property
     def gateway_cards(self) -> bool:
         sec = self._reload_cached().get("lark_hls_v2")
         if not isinstance(sec, dict):
@@ -340,13 +347,30 @@ class Config:
     def feishu_base_url(self) -> str:
         return str(self._platform_cfg().get("base_url", defaults.FEISHU_BASE_URL))
 
+    def _secret_env(self, name: str) -> str:
+        """Read secret via multiplex-safe scope first, then os.environ.
+
+        prod ce45f4f: host multiplexer does not carry profiles/<name>/.env
+        into os.environ; agent.secret_scope.get_secret can serve those.
+        """
+        val = ""
+        try:
+            from agent.secret_scope import get_secret, UnscopedSecretError
+            try:
+                val = get_secret(name, "") or ""
+            except UnscopedSecretError:
+                val = ""
+        except Exception:
+            val = ""
+        return val or os.environ.get(name, "")
+
     @property
     def env_app_id(self) -> str:
-        return os.environ.get("FEISHU_APP_ID") or os.environ.get("LARK_APP_ID") or ""
+        return self._secret_env("FEISHU_APP_ID") or self._secret_env("LARK_APP_ID") or ""
 
     @property
     def env_app_secret(self) -> str:
-        return os.environ.get("FEISHU_APP_SECRET") or os.environ.get("LARK_APP_SECRET") or ""
+        return self._secret_env("FEISHU_APP_SECRET") or self._secret_env("LARK_APP_SECRET") or ""
 
     # -- Security / identity -------------------------------------------------
 

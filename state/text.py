@@ -33,6 +33,7 @@ __all__ = [
     "split_reasoning_text",
     "extract_thinking_content",
     "strip_reasoning_tags",
+    "strip_thinking_tags_only",
 ]
 
 REASONING_PREFIX = "Reasoning:\n"
@@ -88,15 +89,46 @@ def extract_thinking_content(text: str) -> str:
 
 # ▍标签剥离
 
-def strip_reasoning_tags(text: str) -> str:
-    """剥离所有推理标签，返回纯回答文本。"""
-    result = _REASONING_OPEN_RE.sub(
+# 完整 thinking 块（含内容）——答案通道不应带推理正文
+_THINK_BLOCK_RE = re.compile(
+    r"<\s*(?:think(?:ing)?|thought|antthinking)\s*>"
+    r".*?"
+    r"<\s*/\s*(?:think(?:ing)?|thought|antthinking)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def strip_thinking_tags_only(text: str) -> str:
+    """剥离推理标签与成对 thinking 块内容，保留答案正文。
+
+    流式 delta 必须用这个：整段清空规则会把同一 chunk 里混着的答案尾部一起吞掉。
+    成对 <thinking>…</thinking> 会连内容一起去掉，避免推理正文漏进答案。
+    """
+    if not text:
+        return ""
+    result = _THINK_BLOCK_RE.sub("", text)
+    return _REASONING_OPEN_RE.sub(
         lambda _: "",
-        _REASONING_CLOSE_RE.sub("", text),
+        _REASONING_CLOSE_RE.sub("", result),
     )
-    if result.strip().startswith(REASONING_PREFIX):
-        result = ""
-    return result
+
+
+def strip_reasoning_tags(text: str) -> str:
+    """剥离所有推理标签，返回纯回答文本。
+
+    全文语义：若整段以 Reasoning: 开头且标签剥离后没有独立答案边界，则视为纯推理。
+    若 Reasoning: 块之后还有正文（空行分隔的后续段落），保留该答案尾部，避免消息吞没。
+    """
+    result = strip_thinking_tags_only(text)
+    stripped = result.strip()
+    if not stripped.startswith(REASONING_PREFIX):
+        return result
+    body = stripped[len(REASONING_PREFIX):]
+    # 空行后的内容视为答案；单块纯推理返回空
+    parts = re.split(r"\n\s*\n", body, maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        return parts[1]
+    return ""
 
 def _clean_reasoning_prefix(text: str) -> str:
     """清理 Reasoning: 前缀和 markdown 斜体标记。"""

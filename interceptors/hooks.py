@@ -202,34 +202,38 @@ def on_tool_updated(
     detail: str = "",
 ) -> bool:
     """[注入点 3] progress_callback — tool.updated."""
-    ctrl.on_tool_update(
-        message_id=message_id,
-        tool_name=tool_name,
-        status=status,
-        detail=detail,
+    return bool(
+        ctrl.on_tool_update(
+            message_id=message_id,
+            tool_name=tool_name,
+            status=status,
+            detail=detail,
+        )
     )
-    return True
 
 
 @_safe_hook(default_return=False, log_level="debug")
 def on_answer_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
-    """[注入点 4] _stream_delta_cb — answer.delta."""
-    ctrl.on_answer(message_id=message_id, text=text)
-    return True
+    """[注入点 4] _stream_delta_cb — answer.delta.
+
+    True=卡片已吸收；False=未吸收，调用方必须继续原始回调，否则内容被吞。
+    """
+    return bool(ctrl.on_answer(message_id=message_id, text=text))
 
 
 @_safe_hook(default_return=False, log_level="debug")
 def on_thinking_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
-    """[注入点 5] _interim_assistant_cb — thinking.delta."""
-    ctrl.on_thinking(message_id=message_id, text=text)
-    return True
+    """[注入点 5] _interim_assistant_cb — thinking.delta.
+
+    True=已吸收；False 时调用方应继续原始回调。
+    """
+    return bool(ctrl.on_thinking(message_id=message_id, text=text))
 
 
 @_safe_hook(default_return=False, log_level="debug")
 def on_reasoning_delta(*, ctrl: Any, message_id: str, text: str) -> bool:
     """[注入点 6] reasoning_callback — native model reasoning delta."""
-    ctrl.on_reasoning(message_id=message_id, text=text)
-    return True
+    return bool(ctrl.on_reasoning(message_id=message_id, text=text))
 
 
 @_safe_hook(default_return=False, log_level="debug")
@@ -378,12 +382,28 @@ def _inject_system_role(source: Any, event: Any) -> None:
         sender_open_id = _extract_sender_open_id(raw_event or {})
         
         # Prefer sender open_id over source.user_id (more reliable for group messages)
-        if sender_open_id and not user_id:
+        # v2.2 (from WSL deploy): KEEP tenant user_id; never leave ou_ in source.user_id.
+        # open_id is app-scoped (ou_...); tenant user_id is 72f89f96 etc.
+        _OU_TO_TENANT = {
+            "ou_4ef3ad4a03b463e23cbe5197a7f72ee1": "72f89f96",
+            "ou_6d6c4692aaf5d0ec234b9fc227ebcf49": "72f89f96",
+        }
+        if user_id and user_id.startswith("ou_") and sender_open_id and user_id == sender_open_id:
+            _mapped = _OU_TO_TENANT.get(sender_open_id, "")
+            if _mapped:
+                user_id = _mapped
+                source.user_id = _mapped
+        if not user_id and sender_open_id:
+            _mapped = _OU_TO_TENANT.get(sender_open_id, "")
+            if _mapped:
+                user_id = _mapped
+                source.user_id = _mapped
+        # identity lookup uses open_id when no tenant id is known; do not assign ou_ into source.user_id
+        if not user_id:
             user_id = sender_open_id
-            source.user_id = user_id
-        elif sender_open_id and user_id != sender_open_id:
-            # source.user_id might be tenant-scoped; sender open_id is what we need for identity
-            user_id = sender_open_id
+        elif sender_open_id and user_id != sender_open_id and not user_id.startswith("ou_"):
+            # keep tenant id on source.user_id; identity may still use open_id
+            pass
         
         if not user_id:
             _logger.warning("[FeishuIdentity] No user_id available, skipping role injection")

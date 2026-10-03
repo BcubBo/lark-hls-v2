@@ -407,7 +407,7 @@ def apply_patches() -> None:
         "create_adapter_hook": "ok" if create_adapter_hooked else "missing",
         "hermes_layout": layout,
     }
-    _logger.info(
+    _logger.warning(
         "HLS: patch summary v%s -- GatewayRunner=%s conversation_loop=%s "
         "AIAgent=applied cron=%s background=%s FeishuAdapter=%s create_adapter_hook=%s layout=%s",
         __version__,
@@ -419,6 +419,24 @@ def apply_patches() -> None:
         _patch_status["create_adapter_hook"],
         layout,
     )
+    # Self-check for hermes updates: surface silent monkey-patch breakage in journal.
+    critical_missing = [
+        key for key in ("gateway_runner", "feishu_adapter")
+        if _patch_status.get(key) == "missing"
+    ]
+    if critical_missing:
+        _logger.warning(
+            "HLS: CRITICAL patch targets missing after hermes update: %s -- streaming cards "
+            "may be degraded. Check HermesCompat layout / adapter method names.",
+            ",".join(critical_missing),
+        )
+    else:
+        _logger.warning(
+            "HLS: patch self-check OK (GatewayRunner=%s FeishuAdapter=%s create_adapter_hook=%s)",
+            _patch_status["gateway_runner"],
+            _patch_status["feishu_adapter"],
+            _patch_status["create_adapter_hook"],
+        )
 
     # Deferred direct patch: retry AIAgent.run_conversation after Hermes
     # finishes loading all modules (belt-and-suspenders for lazy imports)

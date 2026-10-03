@@ -496,8 +496,18 @@ class UnifiedControllerMixin:
                             "unified flush phase 2 SCHEMA ERROR (permanent): %s — detail: %s card=%s",
                             e, e.extract_schema_detail(), session.card_id[:12],
                         )
+                        # Phase-2: degrade to plain markdown rather than drop dirty content
+                        if state.answer_text:
+                            session.sequence += 1
+                            ok = await _fallback_write_answer(
+                                self._client, session.card_id,
+                                state.answer_text[:4000],
+                                sequence=session.sequence,
+                            )
+                            if ok:
+                                session._creation_stages.add("answer")
+                                state.answer_dirty = False
                         state.panel_dirty = False
-                        state.answer_dirty = False
                         state.tool_steps_dirty = False
                         return
                     elif is_element_not_found_error(e):
@@ -548,6 +558,14 @@ class UnifiedControllerMixin:
                 except FeishuAPIError as e:
                     if e.code == CARDKIT_STREAMING_CLOSED:
                         session._streaming_closed = True
+                        return
+                    if e.code == CARDKIT_CARD_TOO_LARGE:
+                        # 200860: 流式阶段卡片超 30KB。保留 dirty，封卡时走 20KB 拆分兜底。
+                        _logger.warning(
+                            "HLS: unified stream_element hit 200860 card too large "
+                            "len=%d card=%s — keep dirty for seal split",
+                            len(content), session.card_id[:12],
+                        )
                         return
                     _logger.debug("unified stream_element failed: %s", e)
 
@@ -689,6 +707,13 @@ class UnifiedControllerMixin:
                             session.card_id[:12],
                         )
                         return
+                    if e.code == CARDKIT_CARD_TOO_LARGE:
+                        _logger.warning(
+                            "HLS: unified partial_update hit 200860 card too large "
+                            "len=%d card=%s — keep dirty for seal split",
+                            len(content), session.card_id[:12],
+                        )
+                        return
                     _logger.debug("HLS: unified partial_update failed: %s", e)
             else:
                 # First push — stream_element for typewriter effect
@@ -713,6 +738,13 @@ class UnifiedControllerMixin:
                         _logger.info(
                             "HLS: unified stream — 300313, will retry on next flush: card=%s",
                             session.card_id[:12],
+                        )
+                        return
+                    if e.code == CARDKIT_CARD_TOO_LARGE:
+                        _logger.warning(
+                            "HLS: unified stream hit 200860 card too large "
+                            "len=%d card=%s — keep dirty for seal split",
+                            len(content), session.card_id[:12],
                         )
                         return
                     _logger.debug("HLS: unified stream_element failed: %s", e)
@@ -765,6 +797,8 @@ class UnifiedControllerMixin:
             if _existing_len == 0:
                 # No answer yet - accept the full text
                 state.on_answer_delta(answer)
+            elif answer == state.answer_text:
+                return
             elif len(answer) > _existing_len and answer[:_existing_len] == state.answer_text:
                 # New text extends the existing answer - append only the new portion
                 _new_part = answer[_existing_len:]
@@ -776,7 +810,16 @@ class UnifiedControllerMixin:
                         (session.message_id or "?")[:12],
                     )
                     state.on_answer_delta(_new_part)
-            # else: text is same length or shorter - already captured, skip
+            elif len(answer) > _existing_len:
+                # 非前缀扩展（模型重写/分段不一致）：整段替换，避免吞掉新内容
+                _logger.info(
+                    "HLS: _linear_on_thinking replaces non-prefix answer "
+                    "existing_len=%d new_total=%d msg=%s",
+                    _existing_len, len(answer), (session.message_id or "?")[:12],
+                )
+                state.answer_text = answer
+                state.answer_dirty = True
+            # else: shorter and not a rewrite — already captured, skip
         if (reasoning and self._cfg.show_reasoning and not _reasoning_already_tracked) or answer:
             self._schedule_linear_flush(session)
 
@@ -884,8 +927,15 @@ class UnifiedControllerMixin:
                                 sequence=session.sequence,
                             )
                         else:
-                            _logger.warning("HLS: seal drain answer failed: %s", e)
-                        state.answer_dirty = False
+                            # 200860 (card too large) / transient / unknown:
+                            # DO NOT clear answer_dirty — clearing here silently
+                            # dropped the remaining answer at seal time.
+                            _logger.warning(
+                                "HLS: seal drain answer failed (keeping dirty for "
+                                "final fallback): code=%s err=%s card=%s",
+                                getattr(e, "code", "?"), e, card_id[:12],
+                            )
+                            return
 
             # ── Step 1: Update unified panel to final state (non-streaming) ──
             seal_actions: list[dict[str, Any]] = []
@@ -915,12 +965,42 @@ class UnifiedControllerMixin:
 
             # v1.3.1 fix: Do NOT skip this step even when the answer was already fully
             # guard) is a minor visual issue; content truncation is a P0 data-loss bug.
-            if state is not None and state.answer_text and "answer" in session._creation_stages:
+            if state is not None and state.answer_text:
                 optimized_content = escape_markdown_asterisks(_downgrade_tables(optimize_markdown_style(state.answer_text))) or " "
-                # v2.0.5.0: Feishu card has a 30KB total size limit. Split long
-                # answers into multiple markdown elements to avoid truncation.
-                _ANSWER_BYTES_LIMIT = 20000  # ~20KB, leave headroom for panel+footer
-                if len(optimized_content.encode("utf-8")) > _ANSWER_BYTES_LIMIT:
+                if "answer" not in session._creation_stages:
+                    # Phase-2: answer element never created (Phase-2 flush never landed).
+                    # Direct stream_element/partial_update would 300313 and swallow the
+                    # answer — add a markdown element into the seal batch instead.
+                    from .card.elements import _pick_seal_insert_target
+                    _logger.warning(
+                        "finalize_card: answer element missing but answer_text len=%d — "
+                        "adding markdown via seal add_elements card=%s",
+                        len(state.answer_text), card_id[:12],
+                    )
+                    _ans_elem = {
+                        "tag": "markdown",
+                        "content": optimized_content,
+                        "element_id": ANSWER_ELEMENT_ID,
+                    }
+                    _picked = _pick_seal_insert_target(session.existing_elements, prefer_panel=True)
+                    if _picked is not None:
+                        _tid, _itype = _picked
+                        seal_actions.append({
+                            "action": "add_elements",
+                            "params": {
+                                "type": _itype,
+                                "target_element_id": _tid,
+                                "elements": [_ans_elem],
+                            },
+                        })
+                    else:
+                        seal_actions.append({
+                            "action": "add_elements",
+                            "params": {"elements": [_ans_elem]},
+                        })
+                    session._creation_stages.add("answer")
+                    session.existing_elements.add(ANSWER_ELEMENT_ID)
+                elif len(optimized_content.encode("utf-8")) > 20000:
                     chunks = _split_long_text(optimized_content, limit=4000)
                     # v2.0.8.0: Use stream_element for first chunk (triggers markdown re-parse)
                     session.sequence += 1
@@ -1387,6 +1467,20 @@ class UnifiedControllerMixin:
                                 session.sequence += 1
                                 ok = await _fallback_write_answer(
                                     self._client, session.card_id, content,
+                                    sequence=session.sequence,
+                                )
+                                if ok:
+                                    state.answer_dirty = False
+                            elif e.code == CARDKIT_CARD_TOO_LARGE:
+                                # 200860: 整卡超限。尝试截断后 fallback，失败则保持 dirty 交给封卡拆分。
+                                _logger.warning(
+                                    "HLS: drain answer hit 200860, trying truncated fallback msg=%s",
+                                    (session.message_id or "?")[:12],
+                                )
+                                truncated = content[:8000] + "\n\n…（内容过长，已截断展示）"
+                                session.sequence += 1
+                                ok = await _fallback_write_answer(
+                                    self._client, session.card_id, truncated,
                                     sequence=session.sequence,
                                 )
                                 if ok:

@@ -49,6 +49,26 @@ def _classify_gateway_message(content: str) -> str:
         return "slash"
     return "system"
 
+def _session_card_has_content(sess: Any) -> bool:
+    """卡片是否已有可展示正文。空卡（创建失败/吞没）时不应抑制文本兑底。"""
+    try:
+        st = getattr(sess, "unified_state", None)
+        if st is not None:
+            if getattr(st, "answer_text", ""):
+                return True
+            if getattr(st, "reasoning_rounds", None) or getattr(st, "panel_visible", False):
+                return True
+        text = getattr(sess, "text", None)
+        if text is not None and getattr(text, "display_text", ""):
+            return True
+        # 尚在流式且未终态：默认视为有内容，避免过早放行造成双发
+        if not getattr(sess, "is_terminal_phase", False) and getattr(sess, "card_id", None):
+            return True
+    except Exception:
+        return True
+    return False
+
+
 def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
     """Intercept ``FeishuAdapter.send()`` — convert text to gateway cards."""
     async def _intercepted_send(self_feishu, chat_id, content, reply_to=None, metadata=None, **kwargs):
@@ -91,18 +111,36 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                 _category = _classify_gateway_message(content)
                 _is_important = _category in ("slash", "error", "session")
                 if ctx.get("card_sent") and not _is_important:
+                    # Phase-2: empty card (creation failed / swallowed) must not
+                    # suppress the text reply — otherwise the user sees nothing.
+                    _empty_card = False
                     try:
-                        from gateway.platforms.base import SendResult
-                        return SendResult(success=True)
+                        from ..controller import get_controller
+                        _ctrl = get_controller()
+                        if _ctrl and _ctrl.enabled:
+                            _sess = _ctrl._sess_get(eid)
+                            if _sess is not None and not _session_card_has_content(_sess):
+                                _empty_card = True
+                                _logger.info(
+                                    "feishu_adapter_send: card empty for msg=%s state=%s — "
+                                    "allow text fallback",
+                                    eid[:12], _sess.state,
+                                )
                     except Exception:
-                        return None
+                        _logger.debug("HLS: empty-card check failed", exc_info=True)
+                    if not _empty_card:
+                        try:
+                            from gateway.platforms.base import SendResult
+                            return SendResult(success=True)
+                        except Exception:
+                            return None
                 else:
                     try:
                         from ..controller import get_controller
                         _ctrl = get_controller()
                         if _ctrl and _ctrl.enabled:
                             _sess = _ctrl._sess_get(eid)
-                            if _sess and _sess.card_msg_id:
+                            if _sess and _sess.card_msg_id and _session_card_has_content(_sess):
                                 _logger.info(
                                     "feishu_adapter_send: suppressing text reply "
                                     "(card exists for msg=%s, state=%s, card_sent=%s)",
