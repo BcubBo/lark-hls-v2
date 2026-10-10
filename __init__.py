@@ -12,6 +12,14 @@
 
 """lark-hls-v2 v2 -- Feishu/Lark CardKit v2.0 streaming cards for Hermes Agent."""
 
+import sys as _sys
+from pathlib import Path as _Path
+_vend = _Path(__file__).resolve().parent
+if _vend.name != "_vendor":
+    _vend = _vend / "_vendor"
+if _vend.is_dir() and str(_vend) not in _sys.path:
+    _sys.path.insert(0, str(_vend))
+
 import logging
 from pathlib import Path
 
