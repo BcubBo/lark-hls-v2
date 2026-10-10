@@ -181,37 +181,41 @@ def register(ctx: "PluginContext") -> None:
     """
     _ensure_streaming_config()
 
-    _logger.info("lark-hls-v2 v%s: applying runtime patches...", __version__)
-    try:
-        from ..interceptors import apply_patches
-        apply_patches()
-        _logger.info("lark-hls-v2 v%s: patches applied OK", __version__)
-    except Exception:
-        _logger.exception("lark-hls-v2 v%s: failed to apply patches", __version__)
-
-    # Pre-warm FeishuClient
-    try:
-        from ..controller import get_controller
-        import asyncio
-        ctrl = get_controller()
-        if ctrl.enabled:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None and loop.is_running():
-                _prewarm_task = loop.create_task(ctrl._ensure_init())
-                _prewarm_tasks.add(_prewarm_task)
-                _prewarm_task.add_done_callback(_prewarm_tasks.discard)
-    except Exception:
-        _logger.debug("FeishuClient pre-warm skipped", exc_info=True)
-
-    # Register /aowen commands
+    # 先注册 hook：hermes 插件加载超时 10s，register() 必须尽快返回
     try:
         from ..aowen import handle_pre_gateway_dispatch
         ctx.register_hook("pre_gateway_dispatch", handle_pre_gateway_dispatch)
     except Exception:
         _logger.debug("/aowen hook registration skipped", exc_info=True)
+
+    def _apply_patches_bg() -> None:
+        _logger.warning("lark-hls-v2 v%s: applying runtime patches (bg)...", __version__)
+        try:
+            from ..interceptors import apply_patches
+            apply_patches()
+            _logger.warning("lark-hls-v2 v%s: patches applied OK", __version__)
+        except Exception:
+            _logger.exception("lark-hls-v2 v%s: failed to apply patches", __version__)
+        # Pre-warm FeishuClient in this thread's loop if any
+        try:
+            from ..controller import get_controller
+            ctrl = get_controller()
+            if ctrl.enabled:
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                if loop is not None and loop.is_running():
+                    _prewarm_task = loop.create_task(ctrl._ensure_init())
+                    _prewarm_tasks.add(_prewarm_task)
+                    _prewarm_task.add_done_callback(_prewarm_tasks.discard)
+        except Exception:
+            _logger.debug("FeishuClient pre-warm skipped", exc_info=True)
+
+    import threading
+    _bg = threading.Thread(target=_apply_patches_bg, name="hls-apply-patches", daemon=True)
+    _bg.start()
 
 
 def unregister(ctx: "PluginContext") -> None:
