@@ -341,7 +341,7 @@ class UnifiedControllerMixin:
 
             # Must be set AFTER card_id/card_msg_id are assigned and
             session._card_ready.set()
-            _logger.info(
+            _logger.warning(
                 "HLS: linear card created msg=%s trace=%s linear=%s card_id=%s",
                 (session.message_id or "?")[:12],
                 session.card_trace_id,
@@ -853,6 +853,8 @@ class UnifiedControllerMixin:
         assert self._client is not None
         card_id = session.card_id
         assert card_id is not None
+        _logger.warning("HLS: finalize_card start card=%s msg=%s",
+                        card_id[:12], (session.message_id or '?')[:12])
 
         try:
             # Before closing streaming, we MUST flush any remaining dirty
@@ -1179,8 +1181,25 @@ class UnifiedControllerMixin:
             seal_summary = _build_seal_summary(state)
 
             if not session._streaming_closed:
+                # Phase-4: finalize 期间到达的尾巴 — 关流式前再刷一次 answer
+                try:
+                    if state is not None and state.answer_dirty and session.card_id:
+                        _late = _cached_markdown_pipeline(state.answer_text or " ")
+                        session.sequence += 1
+                        ok = await _fallback_write_answer(
+                            self._client, session.card_id, _late,
+                            sequence=session.sequence,
+                        )
+                        if ok:
+                            state.answer_dirty = False
+                            _logger.warning(
+                                "HLS: late answer flush before close card=%s len=%d",
+                                card_id[:12], len(_late),
+                            )
+                except Exception:
+                    _logger.warning("HLS: late answer flush failed", exc_info=True)
                 session.sequence += 1
-                _logger.info(
+                _logger.warning(
                     "HLS: finalize_card closing streaming card=%s trace=%s seq=%d summary=%s",
                     card_id[:12], session.card_trace_id, session.sequence,
                     repr(seal_summary[:40]) if seal_summary else "(empty)",
@@ -1628,6 +1647,9 @@ class UnifiedControllerMixin:
             # v1.1.0: Record metrics
             try:
                 from .aowen import record_card_completed
+                _logger.warning("HLS: card completed card=%s msg=%s",
+                                (session.card_id or '?')[:12],
+                                (session.message_id or '?')[:12])
                 record_card_completed()
             except Exception:
                 _logger.debug('metrics: record_card_completed failed', exc_info=True)

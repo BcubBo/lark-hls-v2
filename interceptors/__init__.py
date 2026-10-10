@@ -419,6 +419,11 @@ def apply_patches() -> None:
         _patch_status["create_adapter_hook"],
         layout,
     )
+    _logger.warning(
+        "HLS ready v%s layout=%s gateway=%s adapter=%s",
+        __version__, layout, _patch_status.get("gateway_runner"),
+        _patch_status.get("feishu_adapter"),
+    )
     # Self-check for hermes updates: surface silent monkey-patch breakage in journal.
     critical_missing = [
         key for key in ("gateway_runner", "feishu_adapter")

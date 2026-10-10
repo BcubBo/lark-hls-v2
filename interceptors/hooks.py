@@ -41,26 +41,88 @@ from typing import Any
 from ..controller import get_controller
 
 # feishu_identity 模块（替代旧的 FeishuUserCache）
+# Phase-4: HERMES_HOME 在 prod 常指向 ~/.hermes，而脚本在 profiles/bo/scripts。
+# 必须多路径探测，否则 import 失败会落到 stub，权限注入全灭。
 import sys as _sys
 from pathlib import Path as _Path
-_hermes_home = os.environ.get("HERMES_HOME", str(_Path.home() / ".hermes" / "profiles" / "bo"))
-_scripts_dir = os.path.join(_hermes_home, "scripts")
-if _scripts_dir not in _sys.path:
-    _sys.path.insert(0, _scripts_dir)
+
+
+def _iter_identity_script_dirs() -> list[str]:
+    home = _Path.home()
+    env = os.environ.get("HERMES_HOME", "")
+    candidates = []
+    if env:
+        candidates.append(_Path(env) / "scripts")
+        candidates.extend(sorted((_Path(env) / "profiles").glob("*/scripts")))
+    candidates.append(home / ".hermes" / "profiles" / "bo" / "scripts")
+    candidates.append(home / ".hermes" / "scripts")
+    # 优先级：显式列表顺序；bo 必须先于 default 等其它 profile
+    out: list[str] = []
+    seen = set()
+    for c in candidates:
+        try:
+            s = str(c.resolve()) if c.exists() else str(c)
+            if not c.is_dir():
+                continue
+            key = str(c)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(key)
+        except Exception:
+            continue
+    return out
+
+
+_identity_import_error: Exception | None = None
+# insert(0) 会反转顺序：后插入的优先。按低→高优先级遍历，使 bo 排在最前。
+for _scripts_dir in reversed(_iter_identity_script_dirs()):
+    if _scripts_dir not in _sys.path:
+        _sys.path.insert(0, _scripts_dir)
 try:
-    from feishu_identity import FeishuIdentity as _FeishuIdentity
-except ImportError:
-    # 插件缺失时提供空实现，避免全部 hook 失效
+    from feishu_identity import FeishuIdentity as _FeishuIdentity  # noqa: E402
+except Exception as _exc:  # ImportError 之外的失败同样落 stub
+    _identity_import_error = _exc
+    _logger_early = logging.getLogger("lark_hls_v2")
+    _logger_early.warning(
+        "HLS: feishu_identity import failed (%s); using no-op stub. tried=%s",
+        _exc, _iter_identity_script_dirs(),
+    )
+
     class _FeishuIdentity:  # type: ignore[no-redef]
+        """No-op stub — 必须与真类同接口，避免 AttributeError。"""
+
         @staticmethod
         def get_user_id(*a, **kw):
             return None
+
         @staticmethod
         def get_user_name(*a, **kw):
             return None
+
         @staticmethod
         def resolve(open_id, chat_id=None, sender_type=None):
             return open_id
+
+        @staticmethod
+        def get_role(*a, **kw):
+            return "member"
+
+        @staticmethod
+        def set_role(*a, **kw):
+            return False
+
+        @staticmethod
+        def auto_set_role_from_chat(*a, **kw):
+            return False
+
+        @staticmethod
+        def check_permission(*a, **kw):
+            return False
+
+        @staticmethod
+        def is_bot(*a, **kw):
+            return False
 
 _logger = logging.getLogger("lark_hls_v2")
 

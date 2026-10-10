@@ -1136,20 +1136,40 @@ class StreamCardController(UnifiedControllerMixin):
         category: str = "",
     ) -> tuple[str | None, str | None]:
         """Send a gateway-internal message as a card."""
+        # Phase-4: 230002 等终态错误按 chat 降噪，避免 cron 刷屏
+        _terminal = getattr(self, "_gateway_deliver_terminal", None)
+        if _terminal is None:
+            _terminal = self._gateway_deliver_terminal = {}
+        now = time.time()
+        last = _terminal.get(chat_id)
+        if last and now - last < 600:
+            return None, None
         try:
             from .card import build_gateway_card
             await self._ensure_init()
             assert self._client is not None
             card = build_gateway_card(content, category=category)
             card_msg_id = await self._client.send_card_to_chat(chat_id, card)
+            _terminal.pop(chat_id, None)
             _logger.info(
                 "gateway card delivered: chat=%s category=%s card_msg_id=%s content_len=%d",
                 chat_id[:12], category or "system",
                 card_msg_id[:12] if card_msg_id else None, len(content),
             )
             return card_msg_id, None
-        except Exception:
-            _logger.warning("gateway card delivery failed", exc_info=True)
+        except Exception as e:
+            code = getattr(e, "code", None)
+            msg = str(e)
+            # 230002 Bot not in chat / 1000023 消息不存在：终态，10 分钟内不再打全栈
+            if code == 230002 or "can NOT be out of the chat" in msg:
+                _terminal[chat_id] = now
+                _logger.warning(
+                    "gateway card delivery blocked chat=%s code=%s (mute 10m) %s",
+                    (chat_id or "?")[:12], code, msg[:120],
+                )
+                return None, None
+            _logger.warning("gateway card delivery failed code=%s chat=%s: %s",
+                            code, (chat_id or "?")[:12], msg[:200], exc_info=True)
             return None, None
 
     async def _do_gateway_card_update(
