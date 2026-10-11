@@ -1070,6 +1070,48 @@ class StreamCardController(UnifiedControllerMixin):
             )
             await self._send_text_fallback(session, fallback_text=_fallback_text)
 
+    async def merge_text_into_card(
+        self, session: CardSession, text: str, *, label: str = "",
+    ) -> bool:
+        """并入迟到/Recovered 正文到已有卡片。True=已上卡，无需再发文本。
+
+        铁律：并入或单独发出，禁止静默丢弃。失败必须让调用方走文本。
+        """
+        if not session or not session.card_id or not text or not text.strip():
+            return False
+        if self._client is None:
+            return False
+        body = text.strip()
+        content = f"**{label}**\n\n{body}" if label else body
+        if len(content.encode("utf-8")) > 8000:
+            content = content.encode("utf-8")[:8000].decode("utf-8", "ignore") + "\n\n…（原文过长已截断）"
+        try:
+            from .card.elements import ANSWER_ELEMENT_ID
+            session.sequence += 1
+            elem = {"tag": "markdown", "content": content}
+            if ANSWER_ELEMENT_ID in (session.existing_elements or set()):
+                actions = [{
+                    "action": "add_elements",
+                    "params": {
+                        "type": "insert_after",
+                        "target_element_id": ANSWER_ELEMENT_ID,
+                        "elements": [elem],
+                    },
+                }]
+            else:
+                actions = [{"action": "add_elements", "params": {"elements": [elem]}}]
+            await self._client.cardkit_batch_update(
+                session.card_id, actions, sequence=session.sequence,
+            )
+            _logger.warning(
+                "HLS: merged late text into card card=%s len=%d label=%s",
+                (session.card_id or "?")[:12], len(content), label or "-",
+            )
+            return True
+        except Exception as e:
+            _logger.warning("HLS: merge_text_into_card failed (caller must text-send): %s", e)
+            return False
+
     async def _send_text_fallback(self, session: CardSession, *, fallback_text: str = "") -> None:
         """文本兜底: 卡片不可用时回复纯文本。限制 4000 字，会做 markdown 优化。"""
         if not self._client:

@@ -31,6 +31,31 @@ from . import (
 
 # ── FeishuAdapter interception layer (Phase 1: gateway message cards) ─
 
+_RECOVERED_PREFIXES = (
+    "♻️ Recovered reply",
+    "♻ Recovered reply",
+    "Recovered reply",
+)
+
+
+def _is_recovery_redelivery(content: str) -> bool:
+    """Hermes delivery_ledger 重启/重连重投（at-least-once，带可见前缀）."""
+    if not isinstance(content, str):
+        return False
+    s = content.lstrip()
+    return any(s.startswith(p) for p in _RECOVERED_PREFIXES)
+
+
+def _strip_recovery_marker(content: str) -> str:
+    if not isinstance(content, str):
+        return content
+    s = content.lstrip()
+    for p in _RECOVERED_PREFIXES:
+        if s.startswith(p):
+            return s[len(p):].lstrip("\n")
+    return content
+
+
 def _classify_gateway_message(content: str) -> str:
     """Classify a gateway-internal message by its content for card category."""
     if not isinstance(content, str):
@@ -114,6 +139,7 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                     # Phase-2: empty card (creation failed / swallowed) must not
                     # suppress the text reply — otherwise the user sees nothing.
                     _empty_card = False
+                    _sess = None
                     try:
                         from ..controller import get_controller
                         _ctrl = get_controller()
@@ -129,11 +155,59 @@ def _wrap_feishu_adapter_send(orig_send: Callable) -> Callable:
                     except Exception:
                         _logger.debug("HLS: empty-card check failed", exc_info=True)
                     if not _empty_card:
+                        # 铁律：正文不丢。优先并入卡片；merge 任务派发成功才可不再走文本。
+                        # merge 失败时任务内只打日志，这里用 ensure_future + 回调不现实；
+                        # 采用：派发 merge，同时仍返回成功仅当 merge 已排程——若排程失败则放行文本。
+                        _dispatched = False
                         try:
-                            from gateway.platforms.base import SendResult
-                            return SendResult(success=True)
+                            import asyncio as _aio
+                            from ..controller import get_controller as _gc
+                            _body = (
+                                _strip_recovery_marker(content)
+                                if _is_recovery_redelivery(content)
+                                else content
+                            )
+                            _label = (
+                                "Recovered reply（重启重投）"
+                                if _is_recovery_redelivery(content)
+                                else ""
+                            )
+                            _c = _gc()
+                            if _c is not None and _sess is not None and _body.strip():
+                                _loop = _aio.get_event_loop()
+                                if _loop is not None and _loop.is_running():
+                                    async def _merge_then_maybe_text(sess=_sess, body=_body, lab=_label):
+                                        ok = await _c.merge_text_into_card(sess, body, label=lab)
+                                        if not ok:
+                                            # 并入失败：单独发出，绝不丢
+                                            try:
+                                                await orig_send(
+                                                    self_feishu, chat_id, content,
+                                                    reply_to=reply_to, metadata=metadata, **kwargs,
+                                                )
+                                                _logger.warning(
+                                                    "HLS: merge failed, text sent separately len=%d",
+                                                    len(content),
+                                                )
+                                            except Exception:
+                                                _logger.warning(
+                                                    "HLS: merge failed and text send failed", exc_info=True
+                                                )
+                                    _loop.create_task(_merge_then_maybe_text())
+                                    _dispatched = True
+                                    _logger.warning(
+                                        "HLS: late text queued into card (not dropped) msg=%s len=%d",
+                                        eid[:12], len(_body),
+                                    )
                         except Exception:
-                            return None
+                            _dispatched = False
+                        if _dispatched:
+                            try:
+                                from gateway.platforms.base import SendResult
+                                return SendResult(success=True)
+                            except Exception:
+                                return None
+                        # 无法并入：放行原 send（单独列出，不丢）
                 else:
                     try:
                         from ..controller import get_controller
