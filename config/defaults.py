@@ -38,6 +38,10 @@ PRINT_STEP: int = 5
 FLUSH_INTERVAL_MS: float = 180.0
 # Card TTL in seconds
 CARD_TTL_SEC: int = 600
+# Card markdown density: normal | compact | ultra
+# compact: collapse blank lines between list items / around headings
+# ultra:   also turn paragraph blank lines into single newlines (densest chat cards)
+CONTENT_DENSITY: str = "compact"
 # Summary truncation max length (characters) for card seal/title
 SUMMARY_MAX_LENGTH: int = 120
 # Tool/rounding limits

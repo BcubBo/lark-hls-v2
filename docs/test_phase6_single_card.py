@@ -12,9 +12,21 @@ import threading
 import types
 from pathlib import Path
 
-ROOT = Path("/home/ubuntu/.hermes/profiles/bo/plugins/lark-hls-v2")
-if not ROOT.exists():
-    ROOT = Path("/mnt/d/Mimo_Desktop/projects/lark-hls-v2")
+def _detect_root() -> Path:
+    here = Path(__file__).resolve().parent.parent
+    if (here / "controller.py").exists():
+        return here
+    for c in (
+        Path("/home/ubuntu/.hermes/profiles/bo/plugins/lark-hls-v2"),
+        Path("/home/ubuntu/.hermes/plugins/lark-hls-v2"),
+        Path("/mnt/d/Mimo_Desktop/projects/lark-hls-v2"),
+    ):
+        if (c / "controller.py").exists():
+            return c
+    return here
+
+
+ROOT = _detect_root()
 PASS = FAIL = 0
 
 
