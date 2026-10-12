@@ -239,16 +239,18 @@ class StreamCardController(UnifiedControllerMixin):
         stale = self._sess_get(message_id)
         if stale is None:
             return None
+        # Phase-6: 同卡优先。只要还有 card_id 就继续写同一张卡（含已终态）。
+        # 开新卡仅当无卡可写（创建失败/被删），由 orphan 路径兜底。
+        if stale.card_id and stale.unified_state is not None:
+            return message_id
         if stale.is_terminal_phase:
             return None
         if not stale._streaming_closed:
             return None
         if stale._is_continuation:
             return None
-        # Phase-2 anti-split: prefer appending to the sealed card over a new card.
-        # Return the SAME id so on_answer keeps accumulating into the original session.
-        if stale.card_id and stale.unified_state is not None:
-            return message_id
+        if stale._continuation_reactivation_count >= 1:
+            return None
         if stale._continuation_reactivation_count >= 1:
             return None
 
@@ -501,16 +503,32 @@ class StreamCardController(UnifiedControllerMixin):
                 (s.card_id or "")[:12] or "-",
                 (mid or "?")[:12],
             )
+            # Phase-6: STREAMING 卡 idle 超时只做视觉收束，【不】打成终态。
+            # 否则后续 token 只能开新卡 → 思考断裂 + 全文截断（10min 新卡问题）。
+            if s.card_id and s.state == STREAMING and not s._completion_dispatched:
+                _logger.warning(
+                    "prune: TTL idle visual-seal only (keep STREAMING) age=%.0fs idle=%.0fs "
+                    "card=%s msg=%s",
+                    age, idle, (s.card_id or "")[:12], (mid or "?")[:12],
+                )
+                try:
+                    if not s.error_message:
+                        s.error_message = ""
+                    s.footer.setdefault("seal_reason", "ttl_idle_visual")
+                    # 仅折叠/收尾视觉，不 _dispatch_completion
+                    self._fire_and_forget(
+                        self._ttl_visual_seal(s), s._loop or self._get_loop(),
+                    )
+                except Exception:
+                    _logger.debug("ttl visual seal failed", exc_info=True)
+                continue
             if s.card_id and not s._completion_dispatched:
                 if not s.error_message:
                     s.error_message = "Session idle past card TTL; sealing final card"
-                # Placeholder footer so seal still shows elapsed/status even if
-                # the real completion hook never arrives.
                 self._apply_completion_footer(s, self._build_completion_footer(
                     s, duration=age,
                 ))
                 s.footer["seal_reason"] = "ttl_idle"
-                # STREAMING → COMPLETING is legal; CREATING may reject
                 s.set_state(
                     COMPLETING, source="_prune_stale_sessions",
                     reason=TerminalReason.ERROR,
@@ -521,8 +539,41 @@ class StreamCardController(UnifiedControllerMixin):
                 TERMINATED, source="_prune_stale_sessions",
                 reason=TerminalReason.UNAVAILABLE, terminal=True,
             ):
-                # Delay cleanup — leave metadata for gateway suppression
                 pass
+
+    async def _ttl_visual_seal(self, session: CardSession) -> None:
+        """TTL 视觉收束：折叠面板、不 close 终态。可继续收 token。"""
+        try:
+            if not session.card_id or not self._client:
+                return
+            from .card.elements import UNIFIED_PANEL_ELEMENT_ID
+            state = session.unified_state
+            if state is not None:
+                state.finalize()
+            session.sequence += 1
+            # 尽力折叠 panel；失败不致命
+            if UNIFIED_PANEL_ELEMENT_ID in (session.existing_elements or set()):
+                panel = self._build_panel(session, state or UnifiedLinearState(), expanded=False)
+                await self._client.cardkit_batch_update(
+                    session.card_id,
+                    [{
+                        "action": "partial_update_element",
+                        "params": {
+                            "element_id": UNIFIED_PANEL_ELEMENT_ID,
+                            "partial_element": {
+                                "header": panel.get("header", {}),
+                                "elements": panel.get("elements", []),
+                            },
+                        },
+                    }],
+                    sequence=session.sequence,
+                )
+            _logger.warning(
+                "HLS: TTL visual seal done (not terminal) card=%s",
+                (session.card_id or "?")[:12],
+            )
+        except Exception:
+            _logger.warning("HLS: TTL visual seal failed", exc_info=True)
 
     # ── Public hook entry points ────────────────────────────────────
 
@@ -662,10 +713,9 @@ class StreamCardController(UnifiedControllerMixin):
 
         session = self._get_active_session(message_id)
         if session is None:
-            # Phase-2: streaming-closed but non-terminal sessions must still
-            # receive answer tokens (append to sealed card, no new card).
+            # Phase-6: 有 card_id 的 session（含终态）继续同卡写入，避免开新卡。
             _any = self._sess_get(message_id)
-            if _any is not None and not _any.is_terminal_phase:
+            if _any is not None and _any.card_id and _any.unified_state is not None:
                 session = _any
         if session is None or session.guard.should_skip("on_answer"):
             return False
@@ -741,6 +791,10 @@ class StreamCardController(UnifiedControllerMixin):
                 await self._ensure_init()
                 assert self._client is not None
                 from .card.special import build_gateway_card
+                # Phase-6: 新卡必须可见完整正文 + 来源标记（思考在旧卡则无法带走）
+                content = (
+                    "续 · 无会话结果卡（思考过程若在更早卡片，请对照上一条）\n\n" + content
+                )
                 try:
                     card = build_gateway_card(content, category="session")
                 except Exception:
